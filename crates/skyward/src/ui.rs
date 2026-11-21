@@ -2494,13 +2494,15 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     // kept for them: try it without asking, which is the whole
                     // point of the switch. A credential the phone no longer
                     // takes is thrown away rather than tried at every start.
+                    // Not tried on its own any more. An automatic attempt
+                    // runs while the page invites the owner to type the same
+                    // credential, and the two arriving together is what the
+                    // recovery answered by ending itself. The page is where
+                    // the owner's files are opened until that is worked out.
                     let owner_shut = closed.iter().any(|c| c.user == 0 && !c.made_up);
-                    if let Some(code) = app.auto_attempt(owner_shut) {
-                        skyward_sys::kmsg("the kept credential is being tried on the data partition")?;
-                        let job = decrypt::Job::Unlock { closed: closed.clone(), user: 0, credential: code.clone().into_bytes() };
-                        decryptor = Some(Decryptor::start(job)?);
-                        unlock_typed = Some((0, code));
-                        unlock_auto = true;
+                    if owner_shut {
+                        skyward_sys::kmsg("the owner's files are still shut; the decrypt page opens them, as an automatic attempt races the finger")?;
+                        let _ = app.auto_attempt(false);
                     }
                 }
                 decrypt::Ended::Opened(Err(why)) => {
@@ -2829,7 +2831,21 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         decryptor = Some(Decryptor::start(decrypt::Job::Open)?);
                     }
                     Effect::Unlock { user, code } => {
-                        ensure!(decryptor.is_none(), "the data partition is being opened already");
+                        // An unlock asked for while another is already running
+                        // is said on the page, not raised: this path runs on
+                        // what a finger did, and a finger may be early. Raised,
+                        // it left the recovery's own main with an error and the
+                        // process exited - which is what "the screen goes black
+                        // and it reloads" has been.
+                        if decryptor.is_some() {
+                            let said = app.state.lang.pick([
+                                "正在解密，请稍候",
+                                "正在解密，請稍候",
+                                "Decrypting. Wait for it to finish",
+                            ]);
+                            app.say(said, now);
+                            return Ok(());
+                        }
                         let job = decrypt::Job::Unlock { closed: closed.clone(), user, credential: code.clone().into_bytes() };
                         decryptor = Some(Decryptor::start(job)?);
                         // Kept only once it opens: what a phone is given that
