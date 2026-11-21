@@ -210,10 +210,10 @@ fn page(cx: &Ctx) -> Canvas {
 
 /// A canvas tall enough for a scrolling page; [`fit`] trims it to the content.
 fn long_page(cx: &Ctx) -> Canvas {
-    // Two screens of canvas rather than three: a page this tall already costs
-    // tens of megabytes to hold, and the recovery has the phone's memory to
-    // itself with nothing to page out to.
-    sheet(cx, cx.t.m.h * 2, cx.t.pal.bg)
+    // Four screens: the parameters page comes to a little over two on this
+    // phone, and a canvas shorter than the page cuts its last cards off with
+    // nothing said about it. The cost is held only while such a page is drawn.
+    sheet(cx, cx.t.m.h * 4, cx.t.pal.bg)
 }
 
 /// How tall a long page whose content ends at `bottom` is: to the bottom
