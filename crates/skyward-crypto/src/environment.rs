@@ -69,6 +69,14 @@ pub fn pin() -> Result<()> {
         skyward_sys::kmsg(&format!("key service environment: {name}={}", value.unwrap_or_default()))?;
     }
     if let Some(pid) = running(KEYMINT_PROGRAM) {
+        // Never signal this process. The search matches on the executable
+        // behind /proc, and on this phone it once answered with the recovery
+        // itself: the signal ended the recovery, the panel went black and the
+        // supervisor started it again, with the partition left shut. Whatever
+        // made the search answer that way, a process that cannot signal
+        // itself cannot take the recovery down with it.
+        let me = std::process::id();
+        ensure!(pid != me, "the key service was looked for and this process ({me}) answered; refusing to end it");
         skyward_sys::kmsg(&format!("ending key service pid {pid} so it reads the installed system's version again"))?;
         let rc = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
         ensure!(rc == 0, "signal to key service pid {pid} failed: {}", std::io::Error::last_os_error());

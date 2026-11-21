@@ -43,9 +43,17 @@ pub fn prop(_name: &str) -> Option<String> {
 /// This reads /proc on any system, so it is tried on the computer as well as
 /// on the phone.
 pub fn running(path: &str) -> Option<u32> {
+    let wanted = Path::new(path);
+    // This process is never the program being looked for, whatever /proc
+    // says: the search matches on a link the kernel rewrites as a process
+    // execs, and answering with this one would have the caller signal itself.
+    let me = std::process::id();
     std::fs::read_dir("/proc").ok()?.flatten().find_map(|entry| {
         let pid: u32 = entry.file_name().to_str()?.parse().ok()?;
-        (std::fs::read_link(entry.path().join("exe")).ok()? == Path::new(path)).then_some(pid)
+        if pid == me {
+            return None;
+        }
+        (std::fs::read_link(entry.path().join("exe")).ok()? == wanted).then_some(pid)
     })
 }
 
