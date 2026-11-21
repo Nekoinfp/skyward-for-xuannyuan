@@ -91,6 +91,21 @@ const RECOVERY_MANIFEST: &str = "/system/etc/vintf/manifest.xml";
 ///
 /// `wanted` names the hardware services that will be asked for.
 pub fn prepare_hardware_directory(wanted: &[String]) -> Result<()> {
+    // The driver the services talk over comes first, and before the loader:
+    // it is what a recovery lacks and what nothing below can be asked for
+    // without, while a phone whose installed system carries no runtime
+    // bundle would otherwise leave it unmade along with everything after it.
+    let driver = Path::new(HARDWARE_DRIVER);
+    if !driver.exists() {
+        std::os::unix::fs::symlink(HARDWARE_DRIVER_NODE, driver)
+            .with_context(|| format!("point {HARDWARE_DRIVER} at {HARDWARE_DRIVER_NODE}"))?;
+    }
+    // The system's own init opens the driver to every program, as it does
+    // /dev/binder; a recovery's, which uses none of it, leaves it root's
+    // alone, and the directory and the services that register with it run
+    // as the users their init scripts name.
+    fs::set_permissions(driver, std::os::unix::fs::PermissionsExt::from_mode(0o666))
+        .with_context(|| format!("open {HARDWARE_DRIVER} to every program"))?;
     // A loader and the lowest libraries are built together and agree
     // between them on how a program's own storage is laid out, so the
     // installed system's programs are loaded by the installed system's
@@ -111,17 +126,6 @@ pub fn prepare_hardware_directory(wanted: &[String]) -> Result<()> {
         fs::remove_file(loader).with_context(|| format!("take away {}", loader.display()))?;
     }
     std::os::unix::fs::symlink(&from, loader).with_context(|| format!("point {} at {}", loader.display(), from.display()))?;
-    let driver = Path::new(HARDWARE_DRIVER);
-    if !driver.exists() {
-        std::os::unix::fs::symlink(HARDWARE_DRIVER_NODE, driver)
-            .with_context(|| format!("point {HARDWARE_DRIVER} at {HARDWARE_DRIVER_NODE}"))?;
-    }
-    // The system's own init opens the driver to every program, as it does
-    // /dev/binder; a recovery's, which uses none of it, leaves it root's
-    // alone, and the directory and the services that register with it run
-    // as the users their init scripts name.
-    fs::set_permissions(driver, std::os::unix::fs::PermissionsExt::from_mode(0o666))
-        .with_context(|| format!("open {HARDWARE_DRIVER} to every program"))?;
     let from = Path::new(SERVICE_LABELS);
     let into = Path::new(RECOVERY_LABELS).join(from.file_name().expect("a named file"));
     fs::create_dir_all(RECOVERY_LABELS).with_context(|| format!("make {RECOVERY_LABELS}"))?;
