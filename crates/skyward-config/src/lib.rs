@@ -920,6 +920,7 @@ mod tests {
         }
         assert!(DeviceConfig::parse("[device]\ncodename = \"x\"\n").unwrap().owners.is_empty(), "a phone may need none");
     }
+    #[test]
     fn parses_haotian() {
         let cfg = DeviceConfig::parse(include_str!("../../../devices/haotian.toml")).unwrap();
         assert_eq!(cfg.device.codename, "haotian");
