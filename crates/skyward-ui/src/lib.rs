@@ -21,6 +21,7 @@ pub mod search;
 pub mod settings;
 pub mod sort;
 pub mod sprite;
+pub mod style;
 pub mod surface;
 pub mod term;
 pub mod theme;

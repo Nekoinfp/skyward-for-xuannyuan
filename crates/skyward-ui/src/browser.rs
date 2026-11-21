@@ -6,6 +6,8 @@
 //! says is read out of its markup, which is what a reader in a recovery can
 //! use, and the rest of a browser's work is left to a browser.
 
+use crate::style::{self, Sheet, Style};
+
 /// One piece of a page, laid out top to bottom.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Block {
@@ -43,14 +45,24 @@ pub struct Span {
 }
 
 
-/// A page read out: what it calls itself, and what it says.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+// Not `Eq`: what a stylesheet says holds lengths, which do not order.
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Document {
     pub title: String,
     pub blocks: Vec<Block>,
+    /// What the page's stylesheet says about each block, one for one with
+    /// `blocks`: the declarations it inherits from the elements it sits in.
+    pub styles: Vec<Style>,
 }
 
 impl Document {
+    /// A document whose blocks stand under no stylesheet: what a page of
+    /// plain text, or a picture standing alone, comes to.
+    pub fn plain(title: String, blocks: Vec<Block>) -> Document {
+        let styles = vec![Style::default(); blocks.len()];
+        Document { title, blocks, styles }
+    }
+
     /// Whether there is nothing to show.
     pub fn empty(&self) -> bool {
         self.blocks.is_empty()
@@ -124,6 +136,13 @@ fn spans_text(spans: &[Span]) -> String {
 struct Building {
     title: Option<String>,
     blocks: Vec<Block>,
+    /// One for each block, in step with them.
+    styles: Vec<Style>,
+    /// The stylesheet of the page being read.
+    sheet: Sheet,
+    /// The elements being read, innermost last: a block takes what they say
+    /// laid over one another.
+    stack: Vec<Style>,
     /// The spans of the block being gathered.
     spans: Vec<Span>,
     text: String,
@@ -150,7 +169,12 @@ struct ListState {
 
 /// Read `html` as a page, its relative links worked out against `base`.
 pub fn read(html: &str, base: &str) -> Document {
-    let mut b = Building::default();
+    // The page's own stylesheet is read first: what it says decides how its
+    // blocks stand, which is known only as the stylesheet is.
+    let mut b = Building {
+        sheet: style::parse(&style_text(html)),
+        ..Building::default()
+    };
     let bytes: Vec<char> = html.chars().collect();
     let mut at = 0usize;
     while at < bytes.len() {
@@ -213,10 +237,43 @@ pub fn read(html: &str, base: &str) -> Document {
     Document {
         title: b.title.unwrap_or_default(),
         blocks: b.blocks,
+        styles: b.styles,
     }
 }
 
+/// What the `<style>` elements of `html` say between them.
+fn style_text(html: &str) -> String {
+    let lower = html.to_ascii_lowercase();
+    let mut out = String::new();
+    let mut from = 0usize;
+    while let Some(at) = lower[from..].find("<style") {
+        let start = from + at;
+        let Some(open) = lower[start..].find('>') else { break };
+        let body = start + open + 1;
+        let Some(end) = lower[body..].find("</style") else { break };
+        out.push_str(&html[body..body + end]);
+        out.push('\n');
+        from = body + end;
+    }
+    out
+}
+
 impl Building {
+    /// What the elements being read say, laid over one another.
+    fn style(&self) -> Style {
+        let mut held = Style::default();
+        for style in &self.stack {
+            held = style.over(&held);
+        }
+        held
+    }
+
+    /// Keep `block` with the style it stands under.
+    fn push_block(&mut self, block: Block) {
+        self.blocks.push(block);
+        self.styles.push(self.style());
+    }
+
     /// Turn whatever words have been gathered into a span of the block being
     /// built, so that a link's start and end land where they should.
     fn flush_text(&mut self) {
@@ -251,14 +308,14 @@ impl Building {
         if self.heading > 0 {
             let text = spans_text(&spans).trim().to_string();
             if !text.is_empty() {
-                self.blocks.push(Block::Heading { level: self.heading, text });
+                self.push_block(Block::Heading { level: self.heading, text });
             }
             self.heading = 0;
             return;
         }
         if self.quote {
             if !spans.iter().all(|s| s.text.trim().is_empty()) {
-                self.blocks.push(Block::Quote(spans));
+                self.push_block(Block::Quote(spans));
             }
             self.quote = false;
             return;
@@ -268,12 +325,12 @@ impl Building {
                 let state = &mut self.lists[depth];
                 state.count += 1;
                 let marker = if state.ordered { format!("{}.", state.count) } else { "-".to_string() };
-                self.blocks.push(Block::Item { depth: depth as u8, marker, spans });
+                self.push_block(Block::Item { depth: depth as u8, marker, spans });
             }
             return;
         }
         if !spans.iter().all(|s| s.text.trim().is_empty()) {
-            self.blocks.push(Block::Para(spans));
+            self.push_block(Block::Para(spans));
         }
     }
 
@@ -282,7 +339,7 @@ impl Building {
         if let Some(code) = self.code.take() {
             let trimmed = trim_blank_edges(&code);
             if !trimmed.is_empty() {
-                self.blocks.push(Block::Code(trimmed));
+                self.push_block(Block::Code(trimmed));
             }
         }
     }
@@ -290,6 +347,18 @@ impl Building {
 
 /// One element, opening or closing.
 fn element(b: &mut Building, name: &str, closing: bool, tag: &str, base: &str) {
+    // The styles the page's elements stand under, innermost last. An element
+    // that closes leaves it; one that opens joins it, unless it is one of the
+    // few that hold nothing and so never closes.
+    if closing {
+        b.stack.pop();
+    } else if !holds_nothing(name) && b.stack.len() < 100 {
+        let class_text = attribute(tag, "class").unwrap_or_default();
+        let classes: Vec<&str> = class_text.split_whitespace().collect();
+        let id = attribute(tag, "id");
+        let style = b.sheet.style_of(name, &classes, id.as_deref());
+        b.stack.push(style);
+    }
     match name {
         // A paragraph, in whichever of these the page wrote it, ends the one
         // before it whether it opens or closes.
@@ -315,7 +384,7 @@ fn element(b: &mut Building, name: &str, closing: bool, tag: &str, base: &str) {
         }
         "hr" => {
             b.close_block();
-            b.blocks.push(Block::Rule);
+            b.push_block(Block::Rule);
         }
         "ul" | "ol" => {
             b.close_block();
@@ -334,7 +403,7 @@ fn element(b: &mut Building, name: &str, closing: bool, tag: &str, base: &str) {
                 if let Some(code) = b.code.take() {
                     let trimmed = trim_blank_edges(&code);
                     if !trimmed.is_empty() {
-                        b.blocks.push(Block::Code(trimmed));
+                        b.push_block(Block::Code(trimmed));
                     }
                 }
             } else {
@@ -374,14 +443,14 @@ fn element(b: &mut Building, name: &str, closing: bool, tag: &str, base: &str) {
                     .map(|t| collapse(&decode(&t)))
                     .filter(|t| !t.is_empty())
                     .unwrap_or_else(|| file_name_of(&src));
-                b.blocks.push(Block::Video { src: resolve(base, &src), name });
+                b.push_block(Block::Video { src: resolve(base, &src), name });
             }
         }
         "img" => {
             b.close_block();
             let alt = attribute(tag, "alt").unwrap_or_default();
             let src = attribute(tag, "src").map(|s| resolve(base, &s)).unwrap_or_default();
-            b.blocks.push(Block::Image { alt: collapse(&decode(&alt)), src });
+            b.push_block(Block::Image { alt: collapse(&decode(&alt)), src });
         }
         "td" | "th" => {
             // Cells read one after another, with room between them.
@@ -394,6 +463,13 @@ fn element(b: &mut Building, name: &str, closing: bool, tag: &str, base: &str) {
         "body" | "html" | "head" | "table" | "tbody" | "thead" | "span" | "font" | "small" | "sup" | "sub" => {}
         _ => {}
     }
+}
+
+/// Whether a tag holds nothing and so never closes: an `<img>` has no
+/// `</img>`, and pushing its style would leave the stack one too deep for
+/// every block after it.
+fn holds_nothing(name: &str) -> bool {
+    matches!(name, "img" | "br" | "hr" | "input" | "meta" | "link" | "source" | "area" | "base" | "col" | "embed" | "param" | "track" | "wbr")
 }
 
 fn starts_with(chars: &[char], at: usize, what: &str) -> bool {
@@ -691,24 +767,30 @@ const LEAST_IN_A_ROW: usize = 3;
 /// side by side, which is what the page meant.
 pub fn compact(doc: Document) -> Document {
     let mut out: Vec<Block> = Vec::with_capacity(doc.blocks.len());
+    let mut styles: Vec<Style> = Vec::with_capacity(doc.blocks.len());
     let mut run: Vec<Span> = Vec::new();
+    let mut run_style = Style::default();
     let mut count = 0usize;
-    let close = |run: &mut Vec<Span>, count: usize, out: &mut Vec<Block>| {
+    // A row takes the style of its first link, which is where the page's own
+    // row would have had it stand.
+    let close = |run: &mut Vec<Span>, count: usize, style: &Style, out: &mut Vec<Block>, styles: &mut Vec<Style>| {
         if count == 0 {
             return;
         }
         let spans = std::mem::take(run);
         if count >= LEAST_IN_A_ROW {
             out.push(Block::Para(spans));
+            styles.push(style.clone());
         } else {
             // Too few to be a row: each goes back to standing alone, which is
             // what it was.
             for span in spans.into_iter().filter(|span| span.link.is_some()) {
                 out.push(Block::Para(vec![span]));
+                styles.push(style.clone());
             }
         }
     };
-    for block in doc.blocks {
+    for (block, style) in doc.blocks.into_iter().zip(doc.styles) {
         let short = match &block {
             Block::Para(spans) if spans.len() == 1 => {
                 let span = &spans[0];
@@ -719,6 +801,9 @@ pub fn compact(doc: Document) -> Document {
         };
         match short {
             Some(span) => {
+                if count == 0 {
+                    run_style = style;
+                }
                 if count > 0 {
                     run.push(Span { text: "  ".to_string(), link: None, bold: false, italic: false });
                 }
@@ -726,14 +811,15 @@ pub fn compact(doc: Document) -> Document {
                 count += 1;
             }
             None => {
-                close(&mut run, count, &mut out);
+                close(&mut run, count, &run_style, &mut out, &mut styles);
                 count = 0;
                 out.push(block);
+                styles.push(style);
             }
         }
     }
-    close(&mut run, count, &mut out);
-    Document { title: doc.title, blocks: out }
+    close(&mut run, count, &run_style, &mut out, &mut styles);
+    Document { title: doc.title, blocks: out, styles }
 }
 /// The last part of an address, which is what a file is called: the name a
 /// video is offered under when the page gives it none.
@@ -821,7 +907,7 @@ pub fn from_text(body: &str) -> Document {
     if !held.is_empty() {
         blocks.push(Block::Para(vec![Span { text: held.join("\n"), link: None, bold: false, italic: false }]));
     }
-    Document { title: String::new(), blocks }
+    Document::plain(String::new(), blocks)
 }
 #[cfg(test)]
 mod tests {

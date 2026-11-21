@@ -4997,18 +4997,31 @@ fn document(
         }
         y += m.dp(16.0);
     }
-    for block in &doc.blocks {
+    for (index, block) in doc.blocks.iter().enumerate() {
         if y >= limit {
             return (y, true);
+        }
+        // What the page's stylesheet says about this block, if it says
+        // anything: a block it hides is not drawn, one it spaces stands
+        // apart from the rest.
+        let style = doc.styles.get(index).cloned().unwrap_or_default();
+        if style.display == Some(crate::style::Display::None) {
+            continue;
+        }
+        if let Some(space) = style.space_before {
+            y += m.dp(space);
         }
         y = match block {
             browser::Block::Heading { level, text } => {
                 y += m.dp(10.0);
-                let px = match level {
-                    1 => m.dp(27.0),
-                    2 => m.dp(23.0),
-                    3 => m.dp(20.0),
-                    _ => m.dp(17.5),
+                let px = match style.font_size {
+                    Some(size) => m.dp(size),
+                    None => match level {
+                        1 => m.dp(27.0),
+                        2 => m.dp(23.0),
+                        3 => m.dp(20.0),
+                        _ => m.dp(17.5),
+                    },
                 };
                 for line in wrap_plain(c, &f.heading, text, px, w) {
                     c.text_top(&f.heading, &line, x, y, px, t.pal.text, None);
@@ -5017,12 +5030,12 @@ fn document(
                 y + m.dp(13.0)
             }
             browser::Block::Para(spans) => {
-                spans_lines(c, t, f, x, y, w, spans, m.dp(15.5), t.pal.text, out, &mut next_link) + m.dp(13.0)
+                spans_lines(c, t, f, x, y, w, spans, body_px(t, &style, m.dp(15.5)), ink_of(t, &style), out, &mut next_link) + style_after(t, &style, m.dp(13.0))
             }
             browser::Block::Quote(spans) => {
                 let left = x + m.dp(16.0);
                 let start = y;
-                let after = spans_lines(c, t, f, left, y, w - m.dp(22.0), spans, m.dp(15.0), t.pal.subtitle, out, &mut next_link);
+                let after = spans_lines(c, t, f, left, y, w - m.dp(22.0), spans, body_px(t, &style, m.dp(15.0)), style.color.unwrap_or(t.pal.subtitle), out, &mut next_link);
                 c.fill_round_rect(x, start, m.dp(3.0), (after - start).max(1.0), m.dp(1.5), t.pal.track);
                 after + m.dp(13.0)
             }
@@ -5031,7 +5044,7 @@ fn document(
                 let indent = x + m.dp(18.0) * *depth as f32;
                 c.text_top(&f.body, marker, indent, y, px, t.pal.subtitle, None);
                 let left = indent + m.dp(20.0);
-                spans_lines(c, t, f, left, y, (x + w) - left, spans, px, t.pal.text, out, &mut next_link) + m.dp(7.0)
+                spans_lines(c, t, f, left, y, (x + w) - left, spans, body_px(t, &style, px), ink_of(t, &style), out, &mut next_link) + m.dp(7.0)
             }
             browser::Block::Code(text) => {
                 let px = m.dp(13.0);
@@ -5185,6 +5198,22 @@ fn spans_lines(
         at += line_h;
     }
     at
+}
+
+/// A block's size, as its stylesheet asks for it or as the page draws it by
+/// default.
+fn body_px(t: &Theme, style: &crate::style::Style, by_default: f32) -> f32 {
+    style.font_size.map(|size| t.m.dp(size)).unwrap_or(by_default)
+}
+
+/// A block's ink, as its stylesheet asks for it.
+fn ink_of(t: &Theme, style: &crate::style::Style) -> Rgba {
+    style.color.unwrap_or(t.pal.text)
+}
+
+/// The room after a block, as its stylesheet asks for it.
+fn style_after(t: &Theme, style: &crate::style::Style, by_default: f32) -> f32 {
+    style.space_after.map(|space| t.m.dp(space)).unwrap_or(by_default)
 }
 
 /// How tall one line of `face` at `px` stands: its letters' reach above and

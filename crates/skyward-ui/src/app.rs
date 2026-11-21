@@ -7021,10 +7021,10 @@ impl App {
             b.loading = false;
             b.said = None;
             b.links.clear();
-            b.page = Some(Ok(browser::Document {
-                title: String::new(),
-                blocks: vec![browser::Block::Video { src: url, name }],
-            }));
+            b.page = Some(Ok(browser::Document::plain(
+                String::new(),
+                vec![browser::Block::Video { src: url, name }],
+            )));
             self.refresh();
             return Vec::new();
         }

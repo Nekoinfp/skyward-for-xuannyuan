@@ -2925,15 +2925,15 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                             // would take a line of its own.
                             skyward_net::browse::Content::Html => skyward_ui::browser::compact(skyward_ui::browser::read(&page.body, &page.url)),
                             skyward_net::browse::Content::Text => skyward_ui::browser::from_text(&page.body),
-                            skyward_net::browse::Content::Other(ref kind) => skyward_ui::browser::Document {
-                                title: String::new(),
-                                blocks: vec![skyward_ui::browser::Block::Para(vec![skyward_ui::browser::Span {
+                            skyward_net::browse::Content::Other(ref kind) => skyward_ui::browser::Document::plain(
+                                String::new(),
+                                vec![skyward_ui::browser::Block::Para(vec![skyward_ui::browser::Span {
                                     text: format!("{kind}, {} bytes", page.body.len()),
                                     link: None,
                                     bold: false,
                                     italic: false,
                                 }])],
-                            },
+                            ),
                         };
                         (page, document)
                     })
