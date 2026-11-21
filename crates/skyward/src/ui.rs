@@ -32,7 +32,7 @@ use skyward_net::download::{self, Failure};
 
 /// How many of a page's pictures are fetched with it: enough for what a reader/
 /// sees first, and not so many that the page takes a long time to arrive.
-const MOST_PICTURES: usize = 8;
+const MOST_PICTURES: usize = 4;
 use skyward_net::http::Servers;
 use skyward_net::release::{Installed, Release, Unanswered};
 use skyward_net::wlan::{Power as WlanPower, Stage as Joining};

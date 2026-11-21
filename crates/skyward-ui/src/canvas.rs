@@ -931,14 +931,41 @@ impl Canvas {
     pub fn draw_picture(&mut self, x: f32, y: f32, w: f32, h: f32, picture: &crate::image::Picture) {
         let (left, top) = (x.round() as i32, y.round() as i32);
         let (w, h) = (w.round().max(0.0) as u32, h.round().max(0.0) as u32);
+        if w == 0 || h == 0 {
+            return;
+        }
+        // A row at a time, into the canvas's own bytes: a picture drawn pixel
+        // by pixel through `blend` costs a call and a bounds test each time,
+        // which for a photograph is half a million of them and the whole of a
+        // frame's time.
         for v in 0..h {
-            for u in 0..w {
-                let Some(px) = crate::image::sample(picture, u, v, w, h) else { continue };
-                if px[3] == 0 {
-                    continue;
+            let py = top + v as i32;
+            let (from, to) = self.columns(left, left + w as i32);
+            if from >= to || py < self.top as i32 || py >= self.bottom as i32 {
+                continue;
+            }
+            let start = self.at(from, py);
+            let row = &mut self.data[start..start + (to - from) as usize * 4];
+            for (i, px) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                let u = (from - left) as u32 + i as u32;
+                let Some(src) = crate::image::sample(picture, u, v, w, h) else { continue };
+                match src[3] {
+                    0 => {}
+                    // Opaque is the common case, and needs no arithmetic.
+                    255 => {
+                        px[0] = src[0];
+                        px[1] = src[1];
+                        px[2] = src[2];
+                        px[3] = 255;
+                    }
+                    a => {
+                        let (a, back) = (a as u32, 255 - a as u32);
+                        px[0] = ((src[0] as u32 * a + px[0] as u32 * back) / 255) as u8;
+                        px[1] = ((src[1] as u32 * a + px[1] as u32 * back) / 255) as u8;
+                        px[2] = ((src[2] as u32 * a + px[2] as u32 * back) / 255) as u8;
+                        px[3] = 255;
+                    }
                 }
-                let ink = Rgba { r: px[0], g: px[1], b: px[2], a: 255 };
-                self.blend(left + u as i32, top + v as i32, ink, px[3] as f32 / 255.0);
             }
         }
     }

@@ -210,7 +210,10 @@ fn page(cx: &Ctx) -> Canvas {
 
 /// A canvas tall enough for a scrolling page; [`fit`] trims it to the content.
 fn long_page(cx: &Ctx) -> Canvas {
-    sheet(cx, cx.t.m.h * 3, cx.t.pal.bg)
+    // Two screens of canvas rather than three: a page this tall already costs
+    // tens of megabytes to hold, and the recovery has the phone's memory to
+    // itself with nothing to page out to.
+    sheet(cx, cx.t.m.h * 2, cx.t.pal.bg)
 }
 
 /// How tall a long page whose content ends at `bottom` is: to the bottom
@@ -4869,6 +4872,12 @@ const BROWSER_NOWEB: Text = [
     "Not on a network yet. Join one on the WLAN page, then come back.",
 ];
 const BROWSER_AGAIN: Text = ["重试", "重試", "Try again"];
+const BROWSER_NEEDS_JS: Text = [
+    "这个页面靠 JavaScript 显示内容，recovery 里的浏览器不能运行 JavaScript，所以这里没有东西可看。要看它，请在系统里用浏览器打开。",
+    "這個頁面靠 JavaScript 顯示內容，recovery 裡的瀏覽器不能執行 JavaScript，所以這裡沒有東西可看。要看它，請在系統裡用瀏覽器開啟。",
+    "This page is drawn by JavaScript, which this recovery browser cannot run, so there is nothing here to show. Open it in a browser from the system instead.",
+];
+
 const BROWSER_NOVIDEO: Text = [
     "这个浏览器还不能播放视频。页面把视频地址直接写出来的，可以在这里看到它叫什么。",
     "這個瀏覽器還不能播放影片。頁面把影片網址直接寫出來的，可以在這裡看到它叫什麼。",
@@ -4997,6 +5006,13 @@ fn document(
         }
         y += m.dp(16.0);
     }
+    // A page that is nearly all script has nothing to show until one runs.
+    // Saying so is what a reader can act on; an empty page says nothing.
+    if doc.scripts >= 5 && doc.blocks.len() <= 2 {
+        let said = l.pick(BROWSER_NEEDS_JS);
+        let after = widgets::warning(c, t, f, y + m.dp(6.0), said);
+        return (after, false);
+    }
     for (index, block) in doc.blocks.iter().enumerate() {
         if y >= limit {
             return (y, true);
@@ -5103,7 +5119,7 @@ fn document(
                 // reader can be given without asking the server again.
                 let held = pictures.iter().find(|(url, _)| url == src).map(|(_, picture)| picture);
                 if let Some(picture) = held {
-                    let (dw, dh) = crate::image::fitted(picture, w, m.dp(420.0));
+                    let (dw, dh) = crate::image::fitted(picture, w, m.dp(320.0));
                     if dw >= 1.0 && dh >= 1.0 {
                         if y + dh > limit || y + dh > c.h as f32 {
                             return (y, true);

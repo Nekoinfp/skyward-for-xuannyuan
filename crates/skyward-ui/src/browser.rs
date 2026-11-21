@@ -53,6 +53,10 @@ pub struct Document {
     /// What the page's stylesheet says about each block, one for one with
     /// `blocks`: the declarations it inherits from the elements it sits in.
     pub styles: Vec<Style>,
+    /// How many `<script>` elements the page carries: a page that is
+    /// nearly all script has nothing to say until one runs, which this
+    /// browser cannot do, and saying so beats showing an empty page.
+    pub scripts: usize,
 }
 
 impl Document {
@@ -60,7 +64,7 @@ impl Document {
     /// plain text, or a picture standing alone, comes to.
     pub fn plain(title: String, blocks: Vec<Block>) -> Document {
         let styles = vec![Style::default(); blocks.len()];
-        Document { title, blocks, styles }
+        Document { title, blocks, styles, scripts: 0 }
     }
 
     /// Whether there is nothing to show.
@@ -238,7 +242,23 @@ pub fn read(html: &str, base: &str) -> Document {
         title: b.title.unwrap_or_default(),
         blocks: b.blocks,
         styles: b.styles,
+        scripts: count_of(html, "<script"),
     }
+}
+
+/// How many times `what` appears in `text`, in either case.
+fn count_of(text: &str, what: &str) -> usize {
+    let lower = text.to_ascii_lowercase();
+    let mut count = 0usize;
+    let mut from = 0usize;
+    while let Some(at) = lower[from..].find(what) {
+        count += 1;
+        from += at + what.len();
+        if count > 10_000 {
+            break;
+        }
+    }
+    count
 }
 
 /// What the `<style>` elements of `html` say between them.
@@ -819,7 +839,7 @@ pub fn compact(doc: Document) -> Document {
         }
     }
     close(&mut run, count, &run_style, &mut out, &mut styles);
-    Document { title: doc.title, blocks: out, styles }
+    Document { title: doc.title, blocks: out, styles, scripts: doc.scripts }
 }
 /// The last part of an address, which is what a file is called: the name a
 /// video is offered under when the page gives it none.
