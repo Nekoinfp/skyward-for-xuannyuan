@@ -1357,9 +1357,16 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
     // storage shut until someone went to the decrypt page — which is the one
     // thing this switch exists to spare them. So the open is begun here, and
     // the kept credential goes with it where the phone asks for one.
+    //
+    // Not done at this start any more. Opening the partition this early races
+    // the secure world's own services coming up: the keep's record is asked
+    // for while the service that holds it is still registering, and the
+    // answer comes back "the other side is gone" and the partition stays
+    // shut. Typing the credential on the page has always worked, because by
+    // then the services are up; doing it here needs a wait on each of them
+    // first, which is not written yet.
     if app.state.remembered.is_some() && !mount::is_mount_point(Path::new(skyward_crypto::data::MOUNT))? {
-        let _ = skyward_sys::kmsg("a kept credential is here, so the data partition is opened at this start");
-        decryptor = Some(Decryptor::start(decrypt::Job::Open)?);
+        let _ = skyward_sys::kmsg("a kept credential is here; the decrypt page opens it, as opening it at a start races the services coming up");
     }
     // When the panel gone dark began to rest.
     let mut rested_at: Option<Instant> = None;
