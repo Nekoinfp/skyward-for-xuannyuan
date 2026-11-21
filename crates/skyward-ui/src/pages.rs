@@ -37,6 +37,9 @@ const PURPLE: Rgba = Rgba::rgb(0x77, 0x67, 0xf9);
 const SLATE: Rgba = Rgba::rgb(0x8c, 0x9d, 0xb0);
 const ORANGE: Rgba = Rgba::rgb(0xff, 0x69, 0x00);
 const RED: Rgba = Rgba::rgb(0xfa, 0x38, 0x2e);
+// Kept for the browser's row on the home page, which is off while the page
+// is reworked: the colour it goes back with.
+#[allow(dead_code)]
 const TEAL: Rgba = Rgba::rgb(0x00, 0xb8, 0xc8);
 
 /// What every page draws from: style, typefaces, the device readings, and

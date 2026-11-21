@@ -1287,6 +1287,14 @@ fn run_binary<S>(ctx: &Context, mount: &Mount<S>) -> Result<(i32, bool)> {
     command
         .current_dir("/")
         .env("PATH", SCRIPT_PATH)
+        // The names a recovery that runs these scripts is asked for by them.
+        // A module's installer asks whether it is booted (BOOTMODE) before it
+        // does anything at all, and writes its lines to OUTFD: without either
+        // it stops at its first check, or runs silently. TWRP sets both, and
+        // the packages written for TWRP read them.
+        .env("BOOTMODE", "true")
+        .env("OUTFD", fd.to_string())
+        .env("ZIPFILE", &package)
         .stdin(Stdio::null())
         .stdout(Stdio::from(output_write.try_clone().context("share the script's output")?))
         .stderr(Stdio::from(output_write));
