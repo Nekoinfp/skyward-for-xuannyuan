@@ -49,11 +49,22 @@ pub struct Ramdisk {
 }
 
 impl Ramdisk {
-    /// Unpack an LZ4 (legacy framing) compressed newc archive, as Android
-    /// boot images carry.
+    /// Unpack an LZ4 compressed newc archive, as Android boot images carry.
+    ///
+    /// Two framings arrive in practice and they are not the same file
+    /// format: the legacy one an initramfs unpacker reads, which this writes
+    /// with [lz4_legacy], and the framed one lz4 writes by default.
+    /// Telling them apart by the magic number matters - a ported build of
+    /// this phone packs its ramdisk in the legacy framing with 8 MiB blocks,
+    /// which the framed decoder rejects as a block too big to be its own.
     pub fn decode(compressed: &[u8]) -> Result<Self> {
-        let mut cpio = Vec::new();
-        lz4_flex::frame::FrameDecoder::new(compressed).read_to_end(&mut cpio).context("lz4 decode")?;
+        let cpio = if compressed.starts_with(&LZ4_LEGACY_MAGIC.to_le_bytes()) {
+            lz4_legacy_decode(compressed)?
+        } else {
+            let mut out = Vec::new();
+            lz4_flex::frame::FrameDecoder::new(compressed).read_to_end(&mut out).context("lz4 decode")?;
+            out
+        };
         let mut entries = Vec::new();
         let mut rest = Cursor::new(cpio.as_slice());
         loop {
@@ -275,6 +286,31 @@ pub fn lz4_legacy(input: &[u8]) -> Vec<u8> {
     out
 }
 
+/// `input` in LZ4's legacy framing, unpacked: the magic number, then each
+/// block with its compressed length before it, and no other header — no block
+/// size, no checksum, nothing that says how long one unpacks to. The buffer a
+/// block is unpacked into is therefore the largest one the kernel would
+/// write, and the length it came to is what is kept.
+fn lz4_legacy_decode(input: &[u8]) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut at = 4usize;
+    let mut block = vec![0u8; LZ4_LEGACY_BLOCK];
+    while at + 4 <= input.len() {
+        let len = u32::from_le_bytes(input[at..at + 4].try_into().expect("four bytes")) as usize;
+        at += 4;
+        if len == 0 {
+            break;
+        }
+        if at + len > input.len() {
+            bail!("a block at {at} runs past the end: {len} bytes of it are not there");
+        }
+        let wrote = lz4_flex::block::decompress_into(&input[at..at + len], &mut block)
+            .with_context(|| format!("lz4 legacy block at {at}"))?;
+        out.extend_from_slice(&block[..wrote]);
+        at += len;
+    }
+    Ok(out)
+}
 fn lz4_tool(input: &[u8]) -> Result<Vec<u8>> {
     let mut child = Command::new("lz4")
         .args(["-l", "-12", "--favor-decSpeed", "-c"])
