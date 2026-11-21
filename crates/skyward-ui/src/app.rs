@@ -1810,6 +1810,9 @@ pub struct Browse {
     /// The addresses the page being read links to, in the order they are
     /// read: what a touch on a link names.
     pub links: Vec<String>,
+    /// The page's pictures, by address, fetched with the page so that they
+    /// are drawn rather than asked for one at a time as it scrolls.
+    pub pictures: Vec<(String, crate::image::Picture)>,
     /// Addresses read, the one on the page among them.
     pub history: Vec<String>,
     /// Where among them the reader is.
@@ -7031,12 +7034,20 @@ impl App {
 
     /// What the web answered, for the browser page: the page read into what
     /// a reader is shown, or why there is none.
-    pub fn browse_read(&mut self, page: Result<skyward_net::browse::Page, String>) {
+    pub fn browse_read(
+        &mut self,
+        page: Result<(skyward_net::browse::Page, browser::Document), String>,
+        pictures: Vec<(String, crate::image::Picture)>,
+    ) {
         let b = &mut self.state.browse;
         b.loading = false;
         match page {
-            Err(why) => b.page = Some(Err(why)),
-            Ok(page) => {
+            Err(why) => {
+                b.pictures.clear();
+                b.page = Some(Err(why));
+            }
+            Ok((page, document)) => {
+                b.pictures = pictures;
                 // Where it settled is the address it is at now: a redirect
                 // followed is the page's own.
                 b.address = page.url.clone();
@@ -7044,21 +7055,6 @@ impl App {
                 if let Some(slot) = b.history.get_mut(b.at) {
                     *slot = page.url.clone();
                 }
-                let document = match page.content {
-                    // A page's rows of links are read as rows: without a
-                    // stylesheet to lay them across, each would take a line.
-                    skyward_net::browse::Content::Html => browser::compact(browser::read(&page.body, &page.url)),
-                    skyward_net::browse::Content::Text => browser::from_text(&page.body),
-                    skyward_net::browse::Content::Other(kind) => browser::Document {
-                        title: String::new(),
-                        blocks: vec![browser::Block::Para(vec![browser::Span {
-                            text: format!("{kind}, {} bytes", page.body.len()),
-                            link: None,
-                            bold: false,
-                            italic: false,
-                        }])],
-                    },
-                };
                 // The links in the order a reader meets them, which is the
                 // order the page numbers them as it draws.
                 b.links.clear();

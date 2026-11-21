@@ -4939,7 +4939,7 @@ pub fn browser(cx: &Ctx) -> Frame {
         }
         Some(Ok(doc)) => {
             let limit = c.h as f32;
-            let (after, more) = document(&mut c, t, f, l, x, y, w, doc, limit, &mut out);
+            let (after, more) = document(&mut c, t, f, l, x, y, w, doc, limit, &s.browse.pictures, &mut out);
             y = after;
             if more {
                 // Said rather than left off: a page cut short with nothing
@@ -4972,6 +4972,7 @@ fn document(
     w: f32,
     doc: &browser::Document,
     limit: f32,
+    pictures: &[(String, crate::image::Picture)],
     out: &mut Vec<Hit>,
 ) -> (f32, bool) {
     let m = &t.m;
@@ -5083,15 +5084,32 @@ fn document(
                 // Said plainly rather than left to be discovered.
                 widgets::footnote(c, t, f, y + box_h + m.dp(6.0), l.pick(BROWSER_NOVIDEO)) + m.dp(13.0)
             }
-            browser::Block::Image { alt, .. } => {
-                let box_h = m.dp(70.0);
-                c.fill_round_rect(x, y, w, box_h, m.dp(10.0), t.pal.card);
-                let px = m.dp(13.3);
-                let what = if alt.is_empty() { l.pick(["图片", "圖片", "image"]) } else { alt.as_str() };
-                for (i, line) in wrap_plain(c, &f.body, what, px, w - m.dp(24.0)).iter().take(2).enumerate() {
-                    c.text_top(&f.body, line, x + m.dp(12.0), y + m.dp(14.0) + i as f32 * line_height(&f.body, px), px, t.pal.subtitle, None);
+            browser::Block::Image { alt, src } => {
+                // A picture that came with the page is drawn; one that did
+                // not is named where it would have been, which is all a
+                // reader can be given without asking the server again.
+                let held = pictures.iter().find(|(url, _)| url == src).map(|(_, picture)| picture);
+                if let Some(picture) = held {
+                    let (dw, dh) = crate::image::fitted(picture, w, m.dp(420.0));
+                    if dw >= 1.0 && dh >= 1.0 {
+                        if y + dh > limit || y + dh > c.h as f32 {
+                            return (y, true);
+                        }
+                        c.draw_picture(x, y, dw, dh, picture);
+                        y + dh + m.dp(12.0)
+                    } else {
+                        y
+                    }
+                } else {
+                    let box_h = m.dp(70.0);
+                    c.fill_round_rect(x, y, w, box_h, m.dp(10.0), t.pal.card);
+                    let px = m.dp(13.3);
+                    let what = if alt.is_empty() { l.pick(["图片", "圖片", "image"]) } else { alt.as_str() };
+                    for (i, line) in wrap_plain(c, &f.body, what, px, w - m.dp(24.0)).iter().take(2).enumerate() {
+                        c.text_top(&f.body, line, x + m.dp(12.0), y + m.dp(14.0) + i as f32 * line_height(&f.body, px), px, t.pal.subtitle, None);
+                    }
+                    y + box_h + m.dp(13.0)
                 }
-                y + box_h + m.dp(13.0)
             }
         };
     }

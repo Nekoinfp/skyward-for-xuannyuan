@@ -106,6 +106,37 @@ fn text_of(bytes: Vec<u8>) -> String {
     }
 }
 
+/// How large a picture may be before it is left out: a page with one huge
+/// photograph on it must not cost the recovery its memory.
+pub const PICTURE_MOST: u64 = 2 << 20;
+
+/// The bytes at `url`, if there are no more of them than `most`.
+pub fn bytes(agent: &ureq::Agent, url: &str, most: u64) -> Result<Vec<u8>> {
+    let mut response = agent.get(url).call().with_context(|| format!("reach {url}"))?;
+    if response.status().as_u16() != 200 {
+        anyhow::bail!("{url}: status {}", response.status().as_u16());
+    }
+    let mut held = Vec::new();
+    let mut body = response.body_mut().with_config().limit(most + 1).reader();
+    let mut buf = vec![0u8; 32 << 10];
+    loop {
+        match body.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                held.extend_from_slice(&buf[..n]);
+                if held.len() as u64 > most {
+                    anyhow::bail!("{url}: larger than {most} bytes");
+                }
+            }
+            Err(e) if !held.is_empty() => {
+                let _ = e;
+                break;
+            }
+            Err(e) => return Err(e).with_context(|| format!("read {url}")),
+        }
+    }
+    Ok(held)
+}
 /// A page as it stands with nothing read yet, for a reader to open on.
 pub fn blank() -> Page {
     Page { url: String::new(), status: 0, content: Content::Html, body: String::new(), clipped: false }

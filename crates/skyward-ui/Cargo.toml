@@ -31,6 +31,8 @@ tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "
 ttf-parser = "0.25.1"
 unicode-width = "0.2.2"
 vt100 = "0.18.1"
+zune-jpeg = "0.5.15"
+image-webp = "0.2.4"
 
 [dev-dependencies]
 # The test that the typeface draws every text the pages write reads them

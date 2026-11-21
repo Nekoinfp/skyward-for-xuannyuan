@@ -56,6 +56,18 @@ impl Document {
         self.blocks.is_empty()
     }
 
+    /// The pictures the page shows, in the order it shows them: what is
+    /// worth fetching before it is drawn.
+    pub fn images(&self) -> Vec<&str> {
+        self.blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::Image { src, .. } if !src.is_empty() => Some(src.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// The words of the page as one string, for a reader that wants them
     /// flat: a search, or a page saved to be read later.
     pub fn text(&self) -> String {

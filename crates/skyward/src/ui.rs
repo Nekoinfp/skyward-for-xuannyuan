@@ -29,6 +29,10 @@ use skyward_sys::Power;
 use skyward_files::Ownership;
 use skyward_block::usb::{self, Drive};
 use skyward_net::download::{self, Failure};
+
+/// How many of a page's pictures are fetched with it: enough for what a reader/
+/// sees first, and not so many that the page takes a long time to arrive.
+const MOST_PICTURES: usize = 8;
 use skyward_net::http::Servers;
 use skyward_net::release::{Installed, Release, Unanswered};
 use skyward_net::wlan::{Power as WlanPower, Stage as Joining};
@@ -2913,8 +2917,38 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
             // waiting too, and the page says so while it does.
             Effect::Browse(url) => {
                 let agent = skyward_net::http::agent(servers.clone());
-                let read = skyward_net::browse::get(&agent, &url).map_err(|e| format!("{e:#}"));
-                app.browse_read(read);
+                let read = skyward_net::browse::get(&agent, &url)
+                    .map(|page| {
+                        let document = match page.content {
+                            // A page's rows of links are read as rows:
+                            // without a stylesheet to lay them across, each
+                            // would take a line of its own.
+                            skyward_net::browse::Content::Html => skyward_ui::browser::compact(skyward_ui::browser::read(&page.body, &page.url)),
+                            skyward_net::browse::Content::Text => skyward_ui::browser::from_text(&page.body),
+                            skyward_net::browse::Content::Other(ref kind) => skyward_ui::browser::Document {
+                                title: String::new(),
+                                blocks: vec![skyward_ui::browser::Block::Para(vec![skyward_ui::browser::Span {
+                                    text: format!("{kind}, {} bytes", page.body.len()),
+                                    link: None,
+                                    bold: false,
+                                    italic: false,
+                                }])],
+                            },
+                        };
+                        (page, document)
+                    })
+                    .map_err(|e| format!("{e:#}"));
+                // Its pictures come with it, so that drawing the page needs
+                // no more waiting: a few of them, and none that is too large.
+                let mut pictures = Vec::new();
+                if let Ok((_, document)) = &read {
+                    for src in document.images().into_iter().take(MOST_PICTURES) {
+                        let Ok(bytes) = skyward_net::browse::bytes(&agent, src, skyward_net::browse::PICTURE_MOST) else { continue };
+                        let Ok(picture) = skyward_ui::image::decode(&bytes) else { continue };
+                        pictures.push((src.to_string(), picture));
+                    }
+                }
+                app.browse_read(read, pictures);
             }
                     // A name taken where an entry goes is the user's to
                     // decide on before anything is written.

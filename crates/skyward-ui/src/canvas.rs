@@ -923,6 +923,25 @@ impl Canvas {
         }
     }
 
+    /// `picture` drawn into the `w` by `h` box at (`x`, `y`), scaled to it,
+    /// its transparent parts letting what is under them through.
+    ///
+    /// A box wider or taller than the picture stretches it: callers fit the
+    /// box to the picture with [`crate::image::fitted`] first.
+    pub fn draw_picture(&mut self, x: f32, y: f32, w: f32, h: f32, picture: &crate::image::Picture) {
+        let (left, top) = (x.round() as i32, y.round() as i32);
+        let (w, h) = (w.round().max(0.0) as u32, h.round().max(0.0) as u32);
+        for v in 0..h {
+            for u in 0..w {
+                let Some(px) = crate::image::sample(picture, u, v, w, h) else { continue };
+                if px[3] == 0 {
+                    continue;
+                }
+                let ink = Rgba { r: px[0], g: px[1], b: px[2], a: 255 };
+                self.blend(left + u as i32, top + v as i32, ink, px[3] as f32 / 255.0);
+            }
+        }
+    }
     pub fn text_width(&self, face: &Face, text: &str, px: f32) -> f32 {
         let scale = face.scale(px);
         let sf = face.font.as_scaled(scale);
