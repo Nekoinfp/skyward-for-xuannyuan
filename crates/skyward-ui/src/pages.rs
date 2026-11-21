@@ -326,11 +326,10 @@ pub fn home(cx: &Ctx) -> Frame {
         });
         opens.push(Action::Open(Screen::Systems));
     }
-    // The web, under the two systems: another place this phone can be, and
-    // the one that needs nothing installed to reach. It is here whether the
-    // network is up or not - the page says how to join one.
-    rows.push(Row::new(l.pick(BROWSER_TITLE)).icon(TEAL, Icon::Globe));
-    opens.push(Action::Open(Screen::Browser));
+    // The browser is off the home page for now: it reads pages as words and
+    // pictures, which is not what a browser is for, and it is being reworked.
+    // The page and its modules stay where they are, so that it comes back with
+    // one line here when it is.
     if !rows.is_empty() {
         let first = widgets::list(&mut c, t, f, y, &rows);
         out.extend(hits(&first.rows, &opens));
@@ -1571,6 +1570,10 @@ pub fn installing(cx: &Ctx) -> Frame {
                 None => until.to_string(),
             };
             let y = widgets::footnote(&mut c, t, f, y, &note);
+            // The engine's own lines, as it writes them: an update that says
+            // only "writing" for minutes reads as one that has stopped, and a
+            // reader who wants to know why it failed scrolls through them.
+            let y = script_output(&mut c, cx, y, &mut rows);
             if *overwriting {
                 let note = l.pick([
                     "正在覆盖当前系统，安装完成前重启将无法进入系统。",
@@ -1597,6 +1600,7 @@ pub fn installing(cx: &Ctx) -> Frame {
             };
             let title = tr!(l, "正在刷入 {partition}", "正在刷入 {partition}", "Flashing {partition}");
             let y = widgets::progress_card(&mut c, t, f, top, &title, &detail, done);
+            let y = script_output(&mut c, cx, y, &mut rows);
             let keep = l.pick(match s.source {
                 Source::Computer | Source::Rescue => ["刷入完成前，请不要断开数据线。", "刷入完成前，請不要拔除傳輸線。", "Keep the cable in until it's flashed."],
                 Source::File(Place::Storage) | Source::Opened { drive: false } | Source::Asked { .. } => {

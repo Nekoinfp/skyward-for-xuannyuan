@@ -807,6 +807,9 @@ fn battery() -> Result<Option<Refusal>> {
 enum Line {
     Status(Status),
     Log(Log),
+    /// One line of the engine's own output, as it wrote it: what a reader
+    /// watching the update scrolls through.
+    Print(String),
 }
 
 /// Run update_engine on the package, telling the screen how far it is,
@@ -851,11 +854,15 @@ fn apply<S>(ctx: &Context, mount: &Mount<S>, update: &Update) -> Result<i32> {
         })
     });
     let log_stop = stop.clone();
+    let printed = tx.clone();
     let logged = thread::spawn(move || {
         engine_lines(stderr, &log_stop, |line| {
             if let Some(l) = ota::log(line) {
                 let _ = tx.send(Line::Log(l));
             }
+            // And on the screen, as the engine wrote it: an update that says
+            // only "writing" for two minutes reads as one that has stopped.
+            let _ = printed.send(Line::Print(line.to_string()));
             writeln!(log, "{line}")
         })
     });
@@ -878,6 +885,7 @@ fn apply<S>(ctx: &Context, mount: &Mount<S>, update: &Update) -> Result<i32> {
             }
             Line::Status(Status::Error(code)) => error = Some(code),
             Line::Log(Log::Partition(_)) => partitions += 1,
+            Line::Print(text) => ctx.send(Event::Print(text)),
             Line::Log(Log::Overwriting) => ctx.send(Event::Overwriting),
             Line::Log(Log::Hashing { index, partition }) => verifying = Some((index, partition)),
         }
