@@ -2518,8 +2518,13 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     app.data_failed(why);
                 }
                 decrypt::Ended::Unlocked(Ok(still)) => {
+                    // Said step by step: an unlock that takes the recovery
+                    // down leaves its own log behind nowhere, so where it got
+                    // to is written before each thing it does.
+                    skyward_sys::kmsg("the credential opened the phone's files; showing which are now open")?;
                     closed = still;
                     show_closed(&mut app, &closed)?;
+                    skyward_sys::kmsg("the pages have been told which files are open")?;
                     // What was typed opened the phone's files, so it is the
                     // credential to keep where the owner asked for it to be
                     // kept. A second space's password is not the owner's, and
@@ -2531,6 +2536,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                             // and an effect dropped on the floor is a switch
                             // that does nothing at all.
                             app.state.remembered = Some(code.clone());
+                            skyward_sys::kmsg("keeping the credential that opened the phone")?;
                             match crate::remembered::save(&code) {
                                 Ok(()) => skyward_sys::kmsg("the credential that opened the phone is kept")?,
                                 Err(e) => {

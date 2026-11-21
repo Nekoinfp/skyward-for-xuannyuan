@@ -277,6 +277,16 @@ fn main() -> Result<()> {
     let started_as = std::env::args_os().next().unwrap_or_default();
     let name = Path::new(&started_as).file_name().unwrap_or_default();
     if name == "recovery" {
+        // A panic in a build that aborts leaves nothing behind: the process
+        // is gone and the log says only that it went. What it was doing and
+        // where it was doing it go to the kernel log first, which the
+        // computer can read afterwards - a recovery that dies while opening
+        // the phone's files is otherwise impossible to ask why.
+        std::panic::set_hook(Box::new(|info| {
+            let where_ = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_else(|| "an unknown place".to_string());
+            let what = info.payload().downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| info.payload().downcast_ref::<String>().cloned()).unwrap_or_default();
+            let _ = skyward_sys::kmsg(&format!("skyward panicked at {where_}: {what}"));
+        }));
         return recovery();
     }
     // Install scripts run the commands linked to this binary by their names.
