@@ -83,7 +83,7 @@ pub fn cpu(l: Lang, c: &Cpu) -> String {
         (Lang::En, 4) => "Quad-core".into(),
         (Lang::En, 6) => "Hexa-core".into(),
         (Lang::En, 8) => "Octa-core".into(),
-        (Lang::En, n) => format!("{n}-core"),
+        (Lang::En | Lang::Ja | Lang::Ko | Lang::Ru | Lang::De | Lang::Fr | Lang::Es | Lang::Pt | Lang::It | Lang::Ar | Lang::Th | Lang::Vi | Lang::Id, n) => format!("{n}-core"),
     };
     match c.max_khz {
         Some(khz) => {
@@ -619,7 +619,7 @@ pub fn erase_stop(l: Lang, s: &EraseStop) -> (String, Option<String>) {
             let what = match l {
                 Lang::Hans => spaced("", &who, "的数据尚未解密，未清除任何内容。请先在「解密」中输入锁屏密码后重试。"),
                 Lang::Hant => spaced("", &who, "的資料尚未解密，未清除任何內容。請先在「解密」中輸入螢幕鎖定密碼後重試。"),
-                Lang::En => format!("The data of {who} isn't decrypted, so nothing was wiped. Enter the screen lock in Decrypt, then try again."),
+                Lang::En | Lang::Ja | Lang::Ko | Lang::Ru | Lang::De | Lang::Fr | Lang::Es | Lang::Pt | Lang::It | Lang::Ar | Lang::Th | Lang::Vi | Lang::Id => format!("The data of {who} isn't decrypted, so nothing was wiped. Enter the screen lock in Decrypt, then try again."),
             };
             (what, None)
         }
@@ -627,7 +627,7 @@ pub fn erase_stop(l: Lang, s: &EraseStop) -> (String, Option<String>) {
             let what = match l {
                 Lang::Hans => spaced("清除", part(l, *p), "失败。"),
                 Lang::Hant => spaced("清除", part(l, *p), "失敗。"),
-                Lang::En => format!("Couldn't wipe {}.", part_in_sentence(*p)),
+                Lang::En | Lang::Ja | Lang::Ko | Lang::Ru | Lang::De | Lang::Fr | Lang::Es | Lang::Pt | Lang::It | Lang::Ar | Lang::Th | Lang::Vi | Lang::Id => format!("Couldn't wipe {}.", part_in_sentence(*p)),
             };
             (what, Some(why.clone()))
         }
@@ -704,7 +704,7 @@ impl Verb {
         match l {
             Lang::Hans => spaced(self.hans, name, "失败"),
             Lang::Hant => spaced(self.hant, name, "失敗"),
-            Lang::En => format!("Couldn't {} {name}", self.base),
+            Lang::En | Lang::Ja | Lang::Ko | Lang::Ru | Lang::De | Lang::Fr | Lang::Es | Lang::Pt | Lang::It | Lang::Ar | Lang::Th | Lang::Vi | Lang::Id => format!("Couldn't {} {name}", self.base),
         }
     }
 }

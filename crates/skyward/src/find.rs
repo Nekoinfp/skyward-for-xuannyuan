@@ -184,7 +184,7 @@ mod tests {
         tree.file("DCIM/land.jpg");
         tree.file("notes.txt");
 
-        let found = find(&tree.0, "land", SortKey::Name, &row).expect("a tree that reads");
+        let found = find(&tree.0, "land", SortKey::Name, false, &row).expect("a tree that reads");
         // The name is in the folder below the one searched, not the one
         // searched: that is the whole point of the walk.
         assert_eq!(found.len(), 1);
@@ -200,7 +200,7 @@ mod tests {
         tree.file("c/SEA.jpg");
         tree.file("c/sand.jpg");
 
-        let found = find(&tree.0, "sea", SortKey::Name, &row).expect("a tree that reads");
+        let found = find(&tree.0, "sea", SortKey::Name, false, &row).expect("a tree that reads");
         let mut names: Vec<String> = found.iter().map(|f| f.entry.name.clone()).collect();
         names.sort();
         // Matched without case, anywhere in the name, in every folder.
@@ -219,7 +219,7 @@ mod tests {
 
         // What is under the folder that cannot be read is not found, and
         // the rest of the tree still is.
-        let found = find(&tree.0, "sea", SortKey::Name, &row).expect("a tree that mostly reads");
+        let found = find(&tree.0, "sea", SortKey::Name, false, &row).expect("a tree that mostly reads");
         assert_eq!(found.len(), 1);
 
         let mut perms = fs::metadata(&shut).expect("the folder").permissions();
@@ -231,7 +231,7 @@ mod tests {
     fn a_query_with_nothing_in_it_finds_nothing() {
         let tree = Tree::made("empty");
         tree.file("sea.jpg");
-        assert!(find(&tree.0, "  ", SortKey::Name, &row).expect("a tree that reads").is_empty());
+        assert!(find(&tree.0, "  ", SortKey::Name, false, &row).expect("a tree that reads").is_empty());
     }
 
     #[test]
@@ -240,7 +240,7 @@ mod tests {
         for i in 0..MOST_FOUND + 20 {
             tree.file(&format!("sea{}.jpg", i));
         }
-        let found = find(&tree.0, "sea", SortKey::Name, &row).expect("a tree that reads");
+        let found = find(&tree.0, "sea", SortKey::Name, false, &row).expect("a tree that reads");
         assert_eq!(found.len(), MOST_FOUND);
     }
 
@@ -251,7 +251,7 @@ mod tests {
         fs::create_dir_all(tree.0.join("sea-folder")).expect("a folder to find");
         std::os::unix::fs::symlink("sea.jpg", tree.0.join("sea-link")).expect("a link to find");
 
-        let found = find(&tree.0, "sea", SortKey::Name, &row).expect("a tree that reads");
+        let found = find(&tree.0, "sea", SortKey::Name, false, &row).expect("a tree that reads");
         let mut kinds: Vec<(&str, bool)> = found
             .iter()
             .map(|f| {

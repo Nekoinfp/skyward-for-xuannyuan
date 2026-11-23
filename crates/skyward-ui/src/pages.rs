@@ -440,13 +440,29 @@ pub fn settings(cx: &Ctx) -> Frame {
     let mut y = vibration.bottom;
     if s.panel_dozes {
         y = widgets::section(&mut c, t, f, y, l.pick(["息屏显示", "螢幕關閉顯示", "Always-on display"]));
-        let on = Row::new(l.pick(ALWAYS_ON)).switch(s.always_on);
-        let aod = widgets::list(&mut c, t, f, y, &[on]);
-        out.extend(hits(&aod.rows, &[Action::Toggle(Switch::AlwaysOn)]));
+        // What the glass holds while the phone is dark, each with its own
+        // switch: the clock, the date, the lunar date, the battery. The
+        // panel's doze is what all of them need, so the section is offered
+        // only where it exists, and everything here starts off.
+        let aod_rows = vec![
+            Row::new(l.pick(ALWAYS_ON)).switch(s.always_on),
+            Row::new(l.pick(["显示时钟", "顯示時鐘", "Clock"])).switch(s.aod_clock),
+            Row::new(l.pick(["显示日期", "顯示日期", "Date"])).switch(s.aod_date),
+            Row::new(l.pick(["显示农历", "顯示農曆", "Lunar date"])).switch(s.aod_lunar),
+            Row::new(l.pick(["显示电量", "顯示電量", "Battery"])).switch(s.aod_battery),
+        ];
+        let aod = widgets::list(&mut c, t, f, y, &aod_rows);
+        out.extend(hits(&aod.rows, &[
+            Action::Toggle(Switch::AlwaysOn),
+            Action::Toggle(Switch::AodClock),
+            Action::Toggle(Switch::AodDate),
+            Action::Toggle(Switch::AodLunar),
+            Action::Toggle(Switch::AodBattery),
+        ]));
         let note = l.pick([
-            "屏幕熄灭后仍显示时间、电量、槽位与解密状态，背光保持关闭。",
-            "螢幕關閉後仍顯示時間、電量、槽位與解密狀態，背光保持關閉。",
-            "With the screen off, the time, the battery, the slot and the data partition stay on the glass, with the backlight out.",
+            "屏幕熄灭后背光保持关闭，显示的内容各自独立开关。",
+            "螢幕關閉後背光保持關閉，顯示的內容各自獨立開關。",
+            "With the screen off the backlight stays out, and each item on the glass has its own switch.",
         ]);
         y = widgets::footnote(&mut c, t, f, aod.bottom, note);
     }
@@ -462,11 +478,13 @@ pub fn settings(cx: &Ctx) -> Frame {
     ];
     if s.panel_taps {
         rows.push(Row::new(l.pick(DOUBLE_TAP)).switch(s.double_tap));
+        rows.push(Row::new(l.pick(["单击亮屏", "單擊亮屏", "Tap to wake"])).switch(s.tap_wake));
     }
     let general = widgets::list(&mut c, t, f, y, &rows);
     let mut actions = vec![Action::Open(Screen::Language), Action::Open(Screen::TimeZone)];
     if s.panel_taps {
         actions.push(Action::Toggle(Switch::DoubleTap));
+        actions.push(Action::Toggle(Switch::TapWake));
     }
     out.extend(hits(&general.rows, &actions));
     y = widgets::section(&mut c, t, f, general.bottom, "USB");
@@ -4240,7 +4258,7 @@ pub fn license(cx: &Ctx) -> Frame {
             let y = widgets::section(&mut c, t, f, y, "原文");
             widgets::paragraph(&mut c, t, f, y - t.m.dp(16.0), LICENSE_ORIGINAL)
         }
-        Lang::En => widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), LICENSE_ORIGINAL),
+        Lang::En | Lang::Ja | Lang::Ko | Lang::Ru | Lang::De | Lang::Fr | Lang::Es | Lang::Pt | Lang::It | Lang::Ar | Lang::Th | Lang::Vi | Lang::Id => widgets::paragraph(&mut c, t, f, y + t.m.dp(4.0), LICENSE_ORIGINAL),
     };
     Frame::new(t, fit(c, t, bottom), Vec::new(), l.pick(LICENSE), top)
 }

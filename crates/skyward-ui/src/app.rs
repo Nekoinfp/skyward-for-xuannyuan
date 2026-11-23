@@ -584,6 +584,17 @@ pub enum Switch {
     /// Light the dark panel when it is tapped twice, which keeps the panel
     /// dozing rather than taken down so that the taps can be felt at all.
     DoubleTap,
+    /// Light the dark panel with a single tap of its own, independent of the
+    /// double tap: either can be on without the other.
+    TapWake,
+    /// The AOD's clock line.
+    AodClock,
+    /// The AOD's date line.
+    AodDate,
+    /// The AOD's lunar-date line, worked out on its own calendar.
+    AodLunar,
+    /// The AOD's battery line.
+    AodBattery,
     /// Show the password typed rather than a dot for each character.
     ShowPassword,
     /// Keep the network joined, with its password, so that the recovery
@@ -1895,6 +1906,18 @@ pub struct State {
     /// blanking — and a dozing panel is a phone that never suspends. Least
     /// power is what a recovery should do unless someone asks for more.
     pub double_tap: bool,
+    /// One tap on the dark panel lights it, independent of the double tap:
+    /// either can be on without the other. It starts off with the double tap,
+    /// for the same reason - a dozing panel is a phone that never suspends -
+    /// and it needs the same kind of panel the double tap needs.
+    pub tap_wake: bool,
+    /// The AOD's own lines, each with its switch: what the dark glass shows.
+    /// The clock is the last one that cannot be turned off without the rest
+    /// going dark for nothing, so it has no switch of its own.
+    pub aod_clock: bool,
+    pub aod_date: bool,
+    pub aod_lunar: bool,
+    pub aod_battery: bool,
     /// This phone's panel has a doze of its own, which the settings page then
     /// offers a switch for.
     pub panel_dozes: bool,
@@ -2177,6 +2200,11 @@ impl Default for State {
             // Off, so a phone flashed and never visited here puts its panel
             // out and suspends, which is the least it can draw.
             double_tap: false,
+            tap_wake: false,
+            aod_clock: true,
+            aod_date: true,
+            aod_lunar: false,
+            aod_battery: true,
             panel_dozes: false,
             reboot: 0,
             wipe: [false; WIPES.len()],
@@ -6217,6 +6245,11 @@ impl App {
                     Switch::ShowPassword => &mut self.state.show_password,
                     Switch::AlwaysOn => &mut self.state.always_on,
                     Switch::DoubleTap => &mut self.state.double_tap,
+                    Switch::TapWake => &mut self.state.tap_wake,
+                    Switch::AodClock => &mut self.state.aod_clock,
+                    Switch::AodDate => &mut self.state.aod_date,
+                    Switch::AodLunar => &mut self.state.aod_lunar,
+                    Switch::AodBattery => &mut self.state.aod_battery,
                     Switch::RememberWlan => &mut self.state.remember_wlan,
                     Switch::Mirror => &mut self.state.mirror,
                     Switch::Wlan => unreachable!("the WLAN switch is turned above"),
