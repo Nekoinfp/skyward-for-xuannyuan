@@ -41,7 +41,7 @@ const MOST_DEPTH: usize = 12;
 /// the folders in the order the walk reached them.
 ///
 /// [`sort`]: skyward_ui::sort::sort
-pub fn find(root: &Path, query: &str, sort: SortKey, read: &dyn Fn(&Path) -> Result<Option<FileRow>>) -> Result<Vec<Found>> {
+pub fn find(root: &Path, query: &str, sort: SortKey, descending: bool, read: &dyn Fn(&Path) -> Result<Option<FileRow>>) -> Result<Vec<Found>> {
     let needle = query.trim().to_lowercase();
     if needle.is_empty() {
         return Ok(Vec::new());
@@ -100,6 +100,9 @@ pub fn find(root: &Path, query: &str, sort: SortKey, read: &dyn Fn(&Path) -> Res
             }
         }
         skyward_ui::sort::sort(&mut here, sort);
+        if descending {
+            skyward_ui::sort::reverse(&mut here, sort);
+        }
         if !here.is_empty() {
             let at = dir.to_string_lossy().into_owned();
             for row in here {

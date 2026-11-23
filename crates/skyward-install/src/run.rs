@@ -1295,6 +1295,13 @@ fn run_binary<S>(ctx: &Context, mount: &Mount<S>) -> Result<(i32, bool)> {
         .env("BOOTMODE", "true")
         .env("OUTFD", fd.to_string())
         .env("ZIPFILE", &package)
+        // Names TWRP and AOSP-based packages use for their terminal, the
+        // mounted Android tree and the sideload API. A package that asks
+        // these gets an answer instead of an empty variable.
+        .env("TERM", "vt100")
+        .env("ANDROID_ROOT", "/system")
+        .env("ANDROID_DATA", "/data")
+        .env("RECOVERY_API_VERSION", API_VERSION)
         .stdin(Stdio::null())
         .stdout(Stdio::from(output_write.try_clone().context("share the script's output")?))
         .stderr(Stdio::from(output_write));
@@ -1378,6 +1385,11 @@ fn run_binary<S>(ctx: &Context, mount: &Mount<S>) -> Result<(i32, bool)> {
             Ok(Said::Unknown(line)) => writeln!(log, "[unknown request] {line}").context("write the log")?,
             Ok(Said::Output(line)) => {
                 writeln!(log, "{line}").context("write the log")?;
+                // Ordinary stdout/stderr is part of the install log too, not
+                // only the protocol's ui_print requests. Selection scripts
+                // print their prompts this way, so the screen has to show it
+                // while it waits for the volume keys.
+                ctx.send(Event::Print(line.clone()));
                 last_output = line;
             }
             Err(RecvTimeoutError::Timeout) => {}

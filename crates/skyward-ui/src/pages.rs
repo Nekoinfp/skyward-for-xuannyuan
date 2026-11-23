@@ -110,6 +110,7 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::CantStart => cant_start(cx),
         Screen::Unhandled => unhandled(cx),
         Screen::Rename => rename(cx),
+        Screen::NewFolder => new_folder(cx),
         Screen::Clash => clash(cx),
         Screen::FileJob => file_job(cx),
         Screen::Wlan => wlan(cx),
@@ -1321,7 +1322,7 @@ fn script_output(c: &mut Canvas, cx: &Ctx, y: f32, rows: &mut Option<Rows>) -> f
     if lines.is_empty() {
         return y;
     }
-    let y = widgets::section(c, cx.t, cx.f, y, cx.state.lang.pick(["安装脚本输出", "安裝指令碼輸出", "Install script output"]));
+    let y = widgets::section(c, cx.t, cx.f, y, cx.state.lang.pick(["安装日志", "安裝日誌", "Install log"]));
     *rows = Some(Rows { edges: widgets::output_edges(c, cx.t, cx.f, y, lines), action: None });
     y
 }
@@ -3633,6 +3634,7 @@ pub fn files(cx: &Ctx) -> Frame {
     // An entry picked to copy or move goes to the folder shown, from the
     // bar held at the bottom; the keyboard, while it is up, holds that
     // place; with neither, nothing is held there.
+    let new = &[l.pick(["新建文件夹", "新建資料夾", "New folder"])];
     let dock = match (&s.clip, s.files_search) {
         (Some(clip), false) => {
             let go = l.pick(match clip.op {
@@ -3643,8 +3645,14 @@ pub fn files(cx: &Ctx) -> Frame {
             Some(Dock { canvas, hits: hits(&rects, &[Action::Unpick, Action::Paste]) })
         }
         (_, true) => Some(keyboard_dock(cx, s)),
-        _ => None,
+        _ => {
+            let (canvas, rects) = widgets::dock_bar(t, f, files::page(t), new);
+            Some(Dock { canvas, hits: hits(&rects, &[Action::NewFolderHere]) })
+        }
     };
+    // The round button still opens a terminal here. Making a folder joins
+    // the dock under the list, beside paste, where the other things done to
+    // the folder shown stand.
     let button = Some((widgets::Glyph::Terminal, Action::TerminalHere));
     Frame { dock, button, ..file_listing(cx) }
 }
@@ -3683,10 +3691,13 @@ fn file_listing(cx: &Ctx) -> Frame {
     };
     let root = l.pick(["根目录", "根目錄", "Root"]);
     let hint = l.pick(FILES_SEARCH_HINT);
-    let pinned = Some(
-        files::head(t, f, &s.files_query, hint, sort_label(l, s.sort), root, &s.files.path)
-            .hits(Action::FilesSearch, Action::ClearFilesQuery, Action::CycleSort),
-    );
+    let head = files::head(t, f, &s.files_query, hint, sort_label(l, s.sort), s.sort_descending, root, &s.files.path);
+    // The order button answers for the key; the chevrons at its right end
+    // reverse the direction, so that either is changed on its own.
+    let chevrons = Rect { x: head.order.x + head.order.w - t.m.dp(30.0), ..head.order };
+    let mut pinned = head.hits(Action::FilesSearch, Action::ClearFilesQuery, Action::CycleSort);
+    pinned.hits.push(Hit { rect: chevrons, action: Action::ReverseSort });
+    let pinned = Some(pinned);
     Frame { bg, rows, pinned, ..Frame::new(t, c, Vec::new(), l.pick(FILES), t.m.dp(files::STRIP_TOP_DP)) }
 }
 
@@ -3732,6 +3743,7 @@ const FILES_SEARCH_ENTER: Text = ["完成", "完成", "Done"];
 fn sort_label(l: Lang, key: SortKey) -> &'static str {
     l.pick(match key {
         SortKey::Name => ["名称", "名稱", "Name"],
+        SortKey::Size => ["大小", "大小", "Size"],
         SortKey::Modified => ["时间", "時間", "Time"],
         SortKey::Kind => ["类型", "類型", "Type"],
     })
@@ -3960,6 +3972,18 @@ pub fn rename(cx: &Ctx) -> Frame {
     widgets::footnote(&mut c, t, f, y, l.pick(["名称不能包含\"/\"。点击「完成」保存。", "名稱不能包含「/」。點選「完成」儲存。", "A name can't hold “/”. Tap Done to save it."]));
     keyboard_hits(&mut c, t, f, s, l.pick(DONE), &mut out);
     Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(RENAME), top) }
+}
+
+/// Naming the folder to make in the one the file manager shows.
+pub fn new_folder(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = page(cx);
+    let mut out = Vec::new();
+    let top = t.m.content_top;
+    let (y, caret) = widgets::text_field(&mut c, t, f, top, &s.new_folder);
+    widgets::footnote(&mut c, t, f, y, l.pick(["将在当前文件夹中创建。名称不能包含\"/\"。", "將在目前資料夾中建立。名稱不能包含「/」。", "Made in the folder shown. A name can't hold “/”."]));
+    keyboard_hits(&mut c, t, f, s, l.pick(DONE), &mut out);
+    Frame { caret: Some(caret), ..Frame::new(t, c, out, l.pick(["新建文件夹", "新建資料夾", "New folder"]), top) }
 }
 
 /// The folder an entry goes to already holds its name: what to do.

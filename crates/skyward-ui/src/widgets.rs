@@ -1019,6 +1019,8 @@ pub enum Glyph {
     Terminal,
     /// A tick: keep what was done.
     Done,
+    /// A folder with a `+` beside it: make one.
+    FolderNew,
 }
 
 /// The centre and radius of the round button at the right end of the bar,
@@ -1061,6 +1063,26 @@ fn glyph_at(c: &mut Canvas, t: &Theme, glyph: Glyph, dx: f32, dy: f32, color: Rg
         Glyph::Done => {
             stroke(at(-8.0, 0.0), at(-2.5, 5.5));
             stroke(at(-2.5, 5.5), at(8.0, -5.5));
+        }
+                Glyph::FolderNew => {
+            // A folder's outline with its tab, and a `+` beside it. Every
+            // stroke goes through one loop, since two closures over `c`
+            // cannot both be live at once.
+            let lines = [
+                ((-9.5f32, 6.5), (-9.5, -4.5)),
+                ((-9.5, -4.5), (-4.5, -4.5)),
+                ((-4.5, -4.5), (-2.5, -2.0)),
+                ((-2.5, -2.0), (1.5, -2.0)),
+                ((1.5, -2.0), (1.5, 6.5)),
+                ((1.5, 6.5), (-9.5, 6.5)),
+                ((4.5, 2.0), (9.5, 2.0)),
+                ((7.0, -0.5), (7.0, 4.5)),
+            ];
+            for ((x0, y0), (x1, y1)) in lines {
+                let (ax, ay) = at(x0, y0);
+                let (bx, by) = at(x1, y1);
+                c.line(ax, ay, bx, by, sw, color);
+            }
         }
     }
 }
@@ -1152,7 +1174,7 @@ pub fn search_box(c: &mut Canvas, t: &Theme, f: &Fonts, r: Rect, text: &str, pla
 /// typeface test reads every string in this crate and asks the bundled font
 /// for each character: a glyph nobody draws would fail it. Returns where it
 /// was drawn.
-pub fn order_button(c: &mut Canvas, t: &Theme, f: &Fonts, right: f32, cy: f32, label: &str) -> Rect {
+pub fn order_button(c: &mut Canvas, t: &Theme, f: &Fonts, right: f32, cy: f32, label: &str, descending: bool) -> Rect {
     let m = &t.m;
     let px = m.row_title_px;
     let h = m.search_h;
@@ -1163,10 +1185,13 @@ pub fn order_button(c: &mut Canvas, t: &Theme, f: &Fonts, right: f32, cy: f32, l
     let (ax, rise) = (r.x + w - m.dp(15.0), m.dp(1.0));
     let sw = m.dp(1.4);
     // Two chevrons, one up and one down: the order, and the one after it.
+    // In reverse the lower one is drawn thicker, which is the direction the
+    // list stands in now.
     c.line(ax - arm, cy - rise - arm, ax, cy - rise, sw, t.pal.search_icon);
     c.line(ax, cy - rise, ax + arm, cy - rise - arm, sw, t.pal.search_icon);
-    c.line(ax - arm, cy + rise + arm, ax, cy + rise, sw, t.pal.search_icon);
-    c.line(ax, cy + rise, ax + arm, cy + rise + arm, sw, t.pal.search_icon);
+    let down_sw = if descending { m.dp(2.6) } else { sw };
+    c.line(ax - arm, cy + rise + arm, ax, cy + rise, down_sw, t.pal.search_icon);
+    c.line(ax, cy + rise, ax + arm, cy + rise + arm, down_sw, t.pal.search_icon);
     let (from, to) = (r.x + m.dp(13.0), ax - arm - m.dp(5.0));
     c.text_center(&f.heading, label, (from + to) / 2.0, cy, px, t.pal.text);
     r

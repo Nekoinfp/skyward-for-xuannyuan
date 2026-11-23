@@ -370,7 +370,11 @@ fn list(app: &mut App, folder: String, closed: &[Closed]) -> Result<()> {
     // order is decided: `sort` is the only function that orders a listing, so
     // a folder cannot come out one way here and another way there.
     if let Ok(rows) = &mut files {
-        skyward_ui::sort::sort(rows, app.state.sort);
+        if app.state.sort_descending {
+            skyward_ui::sort::reverse(rows, app.state.sort);
+        } else {
+            skyward_ui::sort::sort(rows, app.state.sort);
+        }
     }
     app.set_files(folder, files, unix_now()?);
     Ok(())
@@ -2931,13 +2935,27 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                         }
                     },
                     Effect::ReadDir(folder) => list(&mut app, folder, &closed)?,
+                    // A folder made where the file manager asked for it. The
+                    // owner's shared storage is the usual place, so its
+                    // entries inherit what the folder they go into has.
+                    Effect::MakeFolder { into, name } => {
+                        let outcome = (|| -> Result<(), String> {
+                            let own = ownership(Path::new(&into))?;
+                            skyward_files::make_folders(&Path::new(&into).join(&name), own).map_err(|e| format!("{e:#}"))
+                        })()
+                        .map_err(|e| e);
+                        app.folder_made(outcome, now);
+                        if app.state.new_folder.is_empty() {
+                            list(&mut app, into, &closed)?;
+                        }
+                    }
                     // The box's answer is bounded work done here rather than
                     // on a thread of its own: it stops at a couple of
                     // thousand folders, so the page waits a moment and the
                     // run cannot be held by a tree that never ends. Failing
                     // to walk it says so on the page; it does not end the run.
-                    Effect::FindFiles { root, query, gen, sort } => {
-                        let found = crate::find::find(Path::new(&root), &query, sort, &read_row).map_err(|e| format!("{e:#}"));
+                    Effect::FindFiles { root, query, gen, sort, descending } => {
+                        let found = crate::find::find(Path::new(&root), &query, sort, descending, &read_row).map_err(|e| format!("{e:#}"));
                         app.found_files(gen, found);
                     }
                     Effect::ReadPlace(place, folder) => list_place(&mut app, place, folder)?,

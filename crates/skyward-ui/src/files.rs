@@ -560,7 +560,7 @@ impl Head {
 /// `folder` under `top`, and under it the box holding `query` typed so far
 /// (or `hint` while there is none) with the order it is in, `order`, on its
 /// right.
-pub fn head(t: &Theme, f: &Fonts, query: &str, hint: &str, order: &str, top: &str, folder: &str) -> Head {
+pub fn head(t: &Theme, f: &Fonts, query: &str, hint: &str, order: &str, descending: bool, top: &str, folder: &str) -> Head {
     let m = &t.m;
     let path = strip(t, f, top, folder);
     let down = m.dp(HEAD_DP).round() as i32;
@@ -570,7 +570,7 @@ pub fn head(t: &Theme, f: &Fonts, query: &str, hint: &str, order: &str, top: &st
     // folder's name does not move when the box arrives beneath it.
     c.put(&path.canvas, 0);
     let cy = path.canvas.h as f32 + down as f32 / 2.0;
-    let order = widgets::order_button(&mut c, t, f, m.w as f32 - m.margin, cy, order);
+    let order = widgets::order_button(&mut c, t, f, m.w as f32 - m.margin, cy, order, descending);
     let field = Rect::new(m.margin, cy - m.search_h / 2.0, order.x - m.dp(10.0) - m.margin, m.search_h);
     let clear = widgets::search_box(&mut c, t, f, field, query, hint);
     // The box's own hit stops at the cross, so the two never answer for the

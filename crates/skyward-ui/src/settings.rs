@@ -26,7 +26,7 @@ const STORAGE: &str = "storage";
 const USB_DRIVE: &str = "usb_drive";
 /// The orders the file manager can show a folder in, by name, in the order
 /// its page offers them.
-const SORTS: [&str; 3] = ["name", "modified", "kind"];
+const SORTS: [&str; 4] = ["name", "size", "modified", "kind"];
 /// The logs exported, and where they go, by name, in the order of the page
 /// that exports them.
 const LOGS: [&str; 2] = ["recovery", "kernel"];
@@ -165,8 +165,9 @@ impl Settings {
             remember_password: state.remember_password,
             sort: SORTS[match state.sort {
                 SortKey::Name => 0,
-                SortKey::Modified => 1,
-                SortKey::Kind => 2,
+                SortKey::Size => 1,
+                SortKey::Modified => 2,
+                SortKey::Kind => 3,
             }]
             .to_string(),
             mirror: state.mirror,
@@ -236,7 +237,7 @@ impl Settings {
         // A name this version does not know leaves the order as it is, as an
         // unknown time zone or place does.
         if let Some(at) = SORTS.iter().position(|name| *name == self.sort) {
-            state.sort = [SortKey::Name, SortKey::Modified, SortKey::Kind][at];
+            state.sort = [SortKey::Name, SortKey::Size, SortKey::Modified, SortKey::Kind][at];
         }
         state.check_signature = self.install.check_signature;
         state.keep_recovery = self.install.keep_recovery;

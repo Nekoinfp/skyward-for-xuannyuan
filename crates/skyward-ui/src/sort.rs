@@ -34,12 +34,24 @@ pub fn compare(a: &FileRow, b: &FileRow, key: SortKey) -> std::cmp::Ordering {
         // icons group them by, so a folder of images, packages and text
         // files reads as the same three runs however many there are.
         SortKey::Kind => group(a).cmp(&group(b)),
+        SortKey::Size => b.size.cmp(&a.size),
     })
     // Ties broken by name, lower-cased so `IMG_1` and `img_1` sit together,
     // then by the name itself, so two names that differ only in case still
     // have one order and never compare equal.
     .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     .then_with(|| a.name.cmp(&b.name))
+}
+
+/// Reverse the order of a listing already sorted by `key`, keeping folders
+/// first: the direction belongs to the page, not to the key.
+pub fn reverse(entries: &mut [FileRow], key: SortKey) {
+    entries.sort_by(|a, b| compare(b, a, key));
+    // `compare` puts folders first whichever way its arguments go, so the
+    // reverse puts them last. Bring that group back to the front, keeping
+    // the order inside each group as the direction asked for it.
+    let folders = entries.iter().filter(|e| folder(e)).count();
+    entries.rotate_left(folders);
 }
 
 /// Whether `e` is a folder, which the order always puts first.

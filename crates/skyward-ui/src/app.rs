@@ -80,6 +80,8 @@ pub enum Screen {
     /// and the links within it to follow.
     Browser,
     Terminal,
+    /// Naming the folder to make in the one the file manager shows.
+    NewFolder,
     /// Giving the data partition's files the SELinux labels the installed
     /// system's rules give them: what it does and a swipe to start, then
     /// how far it has come and how it ended.
@@ -1253,10 +1255,12 @@ pub enum SortKey {
     /// By kind: folders, then files grouped by what they are — an image, a
     /// package, a text file, anything else — each group ordered by name.
     Kind,
+    /// By bytes, largest first unless the page's direction says otherwise.
+    Size,
 }
 
-/// The three orders, in the order the page lists them.
-pub const SORT_KEYS: [SortKey; 3] = [SortKey::Name, SortKey::Modified, SortKey::Kind];
+/// The orders, in the order the page lists them.
+pub const SORT_KEYS: [SortKey; 4] = [SortKey::Name, SortKey::Size, SortKey::Modified, SortKey::Kind];
 
 /// Where the fastboot page goes, in the order it lists them: the volume
 /// keys move between them and the power key takes one.
@@ -1350,6 +1354,12 @@ pub enum Action {
     Open(Screen),
     /// Follow the `n`th link of the page being read, counting from the top.
     BrowseLink(u32),
+    /// Reverse the file manager's current order, folders still first.
+    ReverseSort,
+    /// Open the page that names the folder to make in the one shown.
+    NewFolderHere,
+    /// Make the folder named on that page, in the folder shown.
+    NewFolder,
     /// Go back to the page before the one being read.
     BrowseBack,
     /// Go forward again to the page left behind.
@@ -1998,6 +2008,9 @@ pub struct State {
     pub files: Folder,
     /// How the file manager orders a folder's entries.
     pub sort: SortKey,
+    /// Whether that order is reversed. Folders still come first: direction
+    /// changes the key, not where the folders to enter next stand.
+    pub sort_descending: bool,
     /// What is typed in the file manager's search box, which keeps the rows
     /// of the folder shown down to the names it finds.
     pub files_query: String,
@@ -2044,6 +2057,8 @@ pub struct State {
     pub clip: Option<Clip>,
     /// What is typed as an entry's new name.
     pub new_name: String,
+    /// The folder being made in the file manager, typed on its page.
+    pub new_folder: String,
     /// The text file the editor page shows, as typed so far.
     pub editor: Option<Editor>,
     /// Deleting the entry the file page shows, or the backup the restore
@@ -2207,6 +2222,7 @@ impl Default for State {
             held: None,
             files: Folder::new("/"),
             sort: SortKey::default(),
+            sort_descending: false,
             files_query: String::new(),
             files_search: false,
             found: None,
@@ -2224,6 +2240,7 @@ impl Default for State {
             asked: Asked::default(),
             clip: None,
             new_name: String::new(),
+            new_folder: String::new(),
             editor: None,
             asking_delete: false,
             clash: None,
@@ -2470,10 +2487,13 @@ pub enum Effect {
     /// Look through the folders below `root` for the entries `query` names,
     /// telling what it found with [`App::found_files`] against search `gen`
     /// so that an answer to a query already typed over is dropped.
-    FindFiles { root: String, query: String, gen: u64, sort: SortKey },
+    FindFiles { root: String, query: String, gen: u64, sort: SortKey, descending: bool },
     /// List the folder at this path from the top of a place, to choose a
     /// file to install in, telling what it holds with [`App::set_place`].
     ReadPlace(Place, String),
+    /// Make the folder `name` in `into`, telling the page how it went with
+    /// [`App::folder_made`].
+    MakeFolder { into: String, name: String },
     /// Read `url` off the web, telling the page what came back with
     /// [`App::browse_read`].
     Browse(String),
@@ -4411,6 +4431,23 @@ impl App {
 
     /// How renaming the entry the file page shows went: done, the folder
     /// comes back with the entry under its new name; refused, why.
+    /// The folder the new-folder page named was made, or why it was not.
+    pub fn folder_made(&mut self, outcome: Result<(), String>, now: u64) {
+        match outcome {
+            Ok(()) => {
+                self.leave(true);
+                while matches!(self.screen(), Screen::NewFolder) {
+                    self.stack.pop();
+                }
+                self.state.new_folder.clear();
+                self.settle_page();
+                self.refresh();
+                self.say(self.state.lang.pick(["文件夹已创建", "資料夾已建立", "Folder made"]), now);
+            }
+            Err(why) => self.report(&why, now),
+        }
+    }
+
     pub fn renamed(&mut self, outcome: Result<(), RenameRefused>, now: u64) {
         match outcome {
             Ok(()) => {
@@ -6351,6 +6388,27 @@ impl App {
                 self.state.layer = Layer::Letters;
                 self.open(Screen::Rename);
             }
+            Action::NewFolderHere => {
+                self.state.new_folder.clear();
+                self.state.layer = Layer::Letters;
+                self.open(Screen::NewFolder);
+            }
+            Action::NewFolder => {
+                let name = self.state.new_folder.trim().to_string();
+                if name.is_empty() || name.contains('/') || name == "." || name == ".." {
+                    self.say(self.state.lang.pick(["名称不能为空、\".\"、\"..\"或包含\"/\"", "名稱不能為空、「.」、「..」或包含「/」", "The name can't be empty, “.”, “..”, or hold “/”"]), now);
+                    return Vec::new();
+                }
+                if let Some(failed) = self.state.files.entries.as_ref().err() {
+                    self.report(&format!("{}: {failed}", self.state.files.path), now);
+                    return Vec::new();
+                }
+                if self.state.files.entries.as_ref().is_ok_and(|entries| entries.iter().any(|e| e.name == name)) {
+                    self.say_taken(now);
+                    return Vec::new();
+                }
+                return vec![Effect::MakeFolder { into: self.state.files.path.clone(), name }];
+            }
             Action::EditEntry => return match self.entry_path() {
                 Some(path) => vec![Effect::OpenText(path)],
                 None => self.no_entry(now),
@@ -6854,6 +6912,14 @@ impl App {
                 }
                 return vec![Effect::ReadDir(self.state.files.path.clone())];
             }
+            Action::ReverseSort => {
+                self.state.sort_descending = !self.state.sort_descending;
+                self.refresh();
+                if !self.state.files_query.trim().is_empty() {
+                    return self.find_files();
+                }
+                return vec![Effect::ReadDir(self.state.files.path.clone())];
+            }
             Action::FilesSearch => {
                 if !self.state.files_search {
                     self.state.files_search = true;
@@ -6958,6 +7024,8 @@ impl App {
             Screen::Browser => &mut self.state.browse.address,
             Screen::Decrypt => &mut self.state.code,
             Screen::Rename => &mut self.state.new_name,
+            // Naming the folder to make is what the new-folder page is for.
+            Screen::NewFolder => &mut self.state.new_folder,
             Screen::WlanPassword => &mut self.state.password,
             Screen::WlanAdd => {
                 let a = self.state.adding.as_mut().expect("the page adds a network");
@@ -7291,6 +7359,17 @@ impl App {
                         _ => return vec![Effect::Rename { path, name }],
                     }
                 }
+                // Naming the folder to make: return makes it, and a name the
+                // folder cannot take is turned down here in the user's words.
+                Screen::NewFolder => {
+                    let name = self.state.new_folder.trim().to_string();
+                    match name.as_str() {
+                        "" => self.say(l.pick(["请输入名称", "請輸入名稱", "Enter a name"]), now),
+                        "." | ".." => self.say(l.pick(["名称不能为\".\"或\"..\"", "名稱不能是「.」或「..」", "A name can't be “.” or “..”"]), now),
+                        _ if name.contains('/') => self.say(l.pick(["名称不能包含\"/\"", "名稱不能包含「/」", "A name can't hold “/”"]), now),
+                        _ => return self.act(Action::NewFolder, now),
+                    }
+                }
                 // A password the network's protection cannot take is turned
                 // down here; one it can goes, and the WLAN page shows how
                 // joining goes.
@@ -7378,7 +7457,7 @@ impl App {
         self.state.found = None;
         self.state.finding = true;
         self.refresh();
-        vec![Effect::FindFiles { root: self.state.files.path.clone(), query, gen, sort: self.state.sort }]
+        vec![Effect::FindFiles { root: self.state.files.path.clone(), query, gen, sort: self.state.sort, descending: self.state.sort_descending }]
     }
 
     /// Forget what a search found, because its text is gone or the folder
@@ -7750,9 +7829,12 @@ impl App {
         }
         let mut fx = self.let_chord_go(now);
         if !self.display_on {
-            // The power key lights the dark panel, and does only that, as on
-            // the phone's own system; the other keys leave it dark.
-            if key == Key::Power {
+            // Power wakes a dark panel, and so does a volume key while an
+            // install is listening for one: a script's choice must not have
+            // to be made blind. No navigation follows it.
+            let waking_install = matches!(key, Key::VolumeUp | Key::VolumeDown)
+                && matches!(self.state.install, Install::Scripting { running: true, .. } | Install::Updating { .. } | Install::Flashing { .. });
+            if key == Key::Power || waking_install {
                 self.wake(now);
             }
             self.button = Some((key, Press::Spent));
@@ -7773,7 +7855,12 @@ impl App {
             return fx;
         }
         self.stir(now);
-        if matches!(key, Key::Power | Key::VolumeDown) {
+        // Volume down is also half of the screenshot chord, but while a
+        // script is listening for it the key must reach the script at once,
+        // not wait for a power partner that will never come.
+        if matches!(key, Key::Power | Key::VolumeDown)
+            && !matches!(self.state.install, Install::Scripting { running: true, .. } | Install::Updating { .. } | Install::Flashing { .. })
+        {
             self.chord = Some((key, now));
             return fx;
         }
@@ -7815,6 +7902,15 @@ impl App {
             }
             Key::VolumeUp | Key::VolumeDown => {
                 let down = key == Key::VolumeDown;
+                // A script listening with getevent receives the same hardware
+                // event independently. While it runs, volume keys only scroll
+                // its log: they must not open another page, take a screenshot
+                // or otherwise change what the script is answering to.
+                if matches!(self.state.install, Install::Scripting { running: true, .. } | Install::Updating { .. } | Install::Flashing { .. }) {
+                    self.button = None;
+                    self.install_log_scroll(if down { self.theme().m.dp(120.0) } else { -self.theme().m.dp(120.0) });
+                    return Vec::new();
+                }
                 self.button = Some((key, Press::Volume { down, next: at + REPEAT_DELAY_MS }));
                 self.volume(down, at)
             }
@@ -8183,6 +8279,17 @@ impl App {
             self.lit();
         }
         Vec::new()
+    }
+
+    /// A volume key while an install is listening for it: scroll the log,
+    /// leaving every other control alone. `getevent` in the script receives
+    /// the hardware key directly; this is only the recovery's own behaviour.
+    fn install_log_scroll(&mut self, by: f32) {
+        self.fling = None;
+        let max = self.max_scroll();
+        let top = self.top_mut();
+        top.1 = (top.1 + by).clamp(0.0, max);
+        self.dirty = true;
     }
 
     /// Move the light to the next control down the page, or up it. A
@@ -11020,6 +11127,40 @@ mod tests {
     }
 
     #[test]
+    fn volume_keys_scroll_an_install_log_instead_of_leaving_the_script() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Installing, W, H, PPD);
+        app.state.install = Install::Scripting { stage: None, running: true };
+        for n in 0..120 {
+            app.install(Event::Print(format!("line {n}")), 0);
+        }
+        app.frame(&f, &i);
+        let before = app.top().1;
+        app.chord = None;
+        app.woke_at = None;
+        app.key_up(Key::Power, 999);
+        let effects = app.key(Key::VolumeDown, 1000);
+        assert!(effects.is_empty());
+        assert_eq!(app.screen(), Screen::Installing, "the script is not left behind");
+        assert!(app.top().1 > before, "volume down reads further into the log");
+        assert!(app.button.is_none(), "it is not held as a navigation key either");
+        let after = app.top().1;
+        app.key(Key::VolumeUp, 1000);
+        assert!(app.top().1 < after, "volume up reads back");
+    }
+
+    #[test]
+    fn a_volume_key_wakes_a_dark_install_screen_without_changing_pages() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Installing, W, H, PPD);
+        app.state.install = Install::Scripting { stage: None, running: true };
+        app.display_on = false;
+        app.key(Key::VolumeDown, 1000);
+        assert!(app.display_on, "a script's prompt is not answered blind");
+        assert_eq!(app.screen(), Screen::Installing);
+    }
+
+    #[test]
     fn a_zip_runs_its_install_script_once_agreed_to_and_shows_what_it_says() {
         let (f, i) = (fonts(), info());
         let mut app = opened(Screen::Install, &f, &i);
@@ -11866,7 +12007,7 @@ mod tests {
         assert_eq!(app.state.files.shown_entries().len(), 3, "every entry is shown before anything is typed");
         let frame = app.frame(&f, &i);
         assert!(frame.pinned.is_some(), "the search box is pinned under the bar");
-        assert!(frame.dock.is_none(), "no keyboard is drawn until the box is touched");
+        assert!(frame.dock.as_ref().is_some_and(|d| d.hits.iter().any(|h| h.action == Action::NewFolderHere)), "the folder dock stands before the keyboard does");
 
         // The keyboard arrives in the strip at the bottom, where the page
         // cannot scroll it away. The box itself is a hit under the bar, and
@@ -11882,7 +12023,7 @@ mod tests {
         // it asks for is a walk of the folders below this one, since a name
         // three folders down is what a search of one folder cannot find.
         let asked = tap_at(&mut app, &f, &i, Action::Type(Cap::Char('b')), 1010);
-        assert_eq!(asked, vec![Effect::FindFiles { root: "/sdcard".into(), query: "b".into(), gen: app.state.find_gen, sort: SortKey::Name }]);
+        assert_eq!(asked, vec![Effect::FindFiles { root: "/sdcard".into(), query: "b".into(), gen: app.state.find_gen, sort: SortKey::Name, descending: false }]);
         assert_eq!(app.state.files_query, "b");
         assert!(app.state.finding, "the page says it is looking");
         assert_eq!(app.state.files.shown_entries().len(), 3, "the folder's own list stays whole behind the box");
@@ -11893,13 +12034,13 @@ mod tests {
         assert!(!app.state.finding);
         assert_eq!(app.frame(&f, &i).rows.as_ref().map(|r| r.count()), Some(1), "the entry found below the folder is the list");
 
-        // One button, and it turns: name, then modified, then kind, then
-        // name. With the box holding something it looks again in the new
-        // order rather than leaving the rows in the old one.
+        // One button, and it turns: name, then size, then modified, then
+        // kind, then name. With the box holding something it looks again in
+        // the new order rather than leaving the rows in the old one.
         assert_eq!(app.state.sort, SortKey::Name);
-        for expected in [SortKey::Modified, SortKey::Kind, SortKey::Name] {
+        for expected in [SortKey::Size, SortKey::Modified, SortKey::Kind, SortKey::Name] {
             let asked = tap_at(&mut app, &f, &i, Action::CycleSort, 1015);
-            assert_eq!(asked, vec![Effect::FindFiles { root: "/sdcard".into(), query: "b".into(), gen: app.state.find_gen, sort: expected }], "the tree is walked again in the new order");
+            assert_eq!(asked, vec![Effect::FindFiles { root: "/sdcard".into(), query: "b".into(), gen: app.state.find_gen, sort: expected, descending: false }], "the tree is walked again in the new order");
             assert_eq!(app.state.sort, expected);
         }
 
@@ -11910,7 +12051,8 @@ mod tests {
         assert_eq!(app.state.files.shown_entries().len(), 3, "every entry comes back");
         assert_eq!(app.frame(&f, &i).rows.as_ref().map(|r| r.count()), Some(3));
         assert!(app.act(Action::CloseFilesSearch, 1025).is_empty());
-        assert!(app.frame(&f, &i).dock.is_none(), "the keyboard goes away");
+        let frame = app.frame(&f, &i);
+        assert!(!frame.dock.as_ref().is_some_and(|d| d.hits.iter().any(|h| h.action == Action::Type(Cap::Char('q')))), "the keyboard goes away; the folder dock stays");
 
         // Another folder is another search: what was typed is not carried.
         app.act(Action::Type(Cap::Char('a')), 1030);
