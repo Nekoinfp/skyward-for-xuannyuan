@@ -1,121 +1,111 @@
-# xuanyuan 适配开发记录
-
-小米 15 Ultra（`xuanyuan`）、澎湃 OS 4.0.4.0（`OS4.0.4.0.XOACNXM`）的 Skyward 适配。
-按时间倒序，记录做过什么、为什么这么做、验证到哪一步、还欠什么。
 
 ---
 
-## 2026-11-22（夜）—— 解密崩溃的根因与回退
+## 2026-11-24 —— 刷机可用性、文件管理、AOD 设置与 15 语言骨架
 
-**现象**：`/data` 解密在点「解密」后黑屏重启，分区仍未挂载。
+**刷入（最重要）**：
+- update_engine 的日志**逐行上屏**，更新/刷分区/脚本三个页面都能滚动到底（TWRP 式）
+- 脚本环境补齐 TWRP 约定：`BOOTMODE`、`OUTFD`、`ZIPFILE`、`TERM`、`ANDROID_ROOT`、`ANDROID_DATA`、`RECOVERY_API_VERSION`
+- 普通脚本 stdout/stderr 也进安装日志（选择式脚本靠它提示音量键操作）
+- **安装中的音量键**：绕过截图组合键等待、直接滚动日志；熄屏时按音量键只亮屏不改页；脚本自己的 `getevent` 照常收到原始事件（Skyward 从不 `EVIOCGRAB`）
 
-**根因**（内核日志，`recovery.log` 每次启动会清空，必须看 `dmesg`）：
+**文件管理**：
+- 排序加「大小」；升降序独立开关（顺序按钮下箭头加粗表示降序），文件夹始终在前
+- 底栏新增「新建文件夹」：独立命名页 + `make_folders` 继承归属权，成功后自动刷新
+
+**AOD**：时钟/日期/农历/电量各自独立开关；「单击亮屏」与「双击亮屏」独立开关（都依赖 panel_taps 能力位）
+
+**语言**：15 种（Hans/Hant/En + Ja/Ko/Ru/De/Fr/Es/Pt/It/Ar/Th/Vi/Id）。**三语全翻，十二语回落英语**并在语言页标注「Nihongo (English)」式说明（Ar 因 RTL 未适配也如实声明）。locale 自动识别 15 种。翻译按编译器穷尽检查逐条补齐，不允许假支持。
+
+**避坑（重复出现）**：PowerShell heredoc 写中文会 mojibake，git show 里正确的文本必须从文件级 UTF-8 读取；cargo 读 mtime 导致"重编了但镜像没变"——已用 `strings` 查二进制特征串兜底。
+
+**下线**：浏览器入口（保留代码），SPA 站点需要完整引擎，另行立项。
+
+# xuanyuan 閫傞厤寮€鍙戣褰?
+灏忕背 15 Ultra锛坄xuanyuan`锛夈€佹編婀?OS 4.0.4.0锛坄OS4.0.4.0.XOACNXM`锛夌殑 Skyward 閫傞厤銆?鎸夋椂闂村€掑簭锛岃褰曞仛杩囦粈涔堛€佷负浠€涔堣繖涔堝仛銆侀獙璇佸埌鍝竴姝ャ€佽繕娆犱粈涔堛€?
+---
+
+## 2026-11-22锛堝锛夆€斺€?瑙ｅ瘑宕╂簝鐨勬牴鍥犱笌鍥為€€
+
+**鐜拌薄**锛歚/data` 瑙ｅ瘑鍦ㄧ偣銆岃В瀵嗐€嶅悗榛戝睆閲嶅惎锛屽垎鍖轰粛鏈寕杞姐€?
+**鏍瑰洜**锛堝唴鏍告棩蹇楋紝`recovery.log` 姣忔鍚姩浼氭竻绌猴紝蹇呴』鐪?`dmesg`锛夛細
 
 ```
 249.504  servicemanager: Caller(pid=829, uid=1000, sid=u:r:recovery:s0)
 249.893  skyward: ending key service pid 829 so it reads the installed system's version again
 249.894  smcinvoke: server_release: android.hardwar server terminated
-         ← 日志到此为止，下一行是 255 秒的重启
+         鈫?鏃ュ織鍒版涓烘锛屼笅涓€琛屾槸 255 绉掔殑閲嶅惎
 ```
 
-`pin()` 用 `running(KEYMINT_PROGRAM)` 在 `/proc` 里找 keymint 的 pid，**找到的是 recovery
-自己的 pid**，然后 `kill(pid, SIGTERM)` 把自己杀了。
+`pin()` 鐢?`running(KEYMINT_PROGRAM)` 鍦?`/proc` 閲屾壘 keymint 鐨?pid锛?*鎵惧埌鐨勬槸 recovery
+鑷繁鐨?pid**锛岀劧鍚?`kill(pid, SIGTERM)` 鎶婅嚜宸辨潃浜嗐€?
+**澶勭疆**锛?
+1. 涓ら亾闃茬嚎锛歚running()` 璺宠繃鑷韩 pid锛沗pin()` 閲?`ensure!(pid != me)`
+2. 鍥為€€ `6034b59`锛堝彟涓€鏉℃敮绾跨殑 `secure.rs`锛氭妸纭欢椹卞姩鍒涘缓鎸埌 loader 涔嬪墠锛夆€斺€斿畠鏀瑰畬涔嬪悗
+   鎵嶅嚭鐜板穿婧冿紝鏄瑕佸珜鐤?3. **瀹炴祴锛氳В瀵嗘仮澶嶆甯?*
 
-**处置**：
-
-1. 两道防线：`running()` 跳过自身 pid；`pin()` 里 `ensure!(pid != me)`
-2. 回退 `6034b59`（另一条支线的 `secure.rs`：把硬件驱动创建挪到 loader 之前）——它改完之后
-   才出现崩溃，是首要嫌疑
-3. **实测：解密恢复正常**
-
-**顺带发现的一个流程 bug（值得记）**：用 `tar` 从 Windows 同步源码会**保留原 mtime**，
-cargo 看到源文件比产物旧就跳过编译（`Finished in 0.10s`），于是**镜像是旧的**。曾因此连续
-两次把旧二进制刷进去而不自知。已在 `wsl-build.sh` 里加 `find ... -exec touch` 修掉。
-
+**椤哄甫鍙戠幇鐨勪竴涓祦绋?bug锛堝€煎緱璁帮級**锛氱敤 `tar` 浠?Windows 鍚屾婧愮爜浼?*淇濈暀鍘?mtime**锛?cargo 鐪嬪埌婧愭枃浠舵瘮浜х墿鏃у氨璺宠繃缂栬瘧锛坄Finished in 0.10s`锛夛紝浜庢槸**闀滃儚鏄棫鐨?*銆傛浘鍥犳杩炵画
+涓ゆ鎶婃棫浜岃繘鍒跺埛杩涘幓鑰屼笉鑷煡銆傚凡鍦?`wsl-build.sh` 閲屽姞 `find ... -exec touch` 淇帀銆?
 ---
 
-## 2026-11-22 —— 浏览器：CSS、图片、性能
+## 2026-11-22 鈥斺€?娴忚鍣細CSS銆佸浘鐗囥€佹€ц兘
 
-**做了什么**：
-
-| 能力 | 说明 |
+**鍋氫簡浠€涔?*锛?
+| 鑳藉姏 | 璇存槑 |
 | --- | --- |
-| CSS | 新模块 `skyward-ui/src/style.rs`。只读影响"文字怎么站"的声明：`display`（含 `none`）、`font-size`（px/em/rem/%）、`color`/`background`、`text-align`、`font-weight`、上下间距。不做级联（最后一条规则胜）、不读 `@media`、没有布局算法 |
-| 样式继承 | 每个块带它所在元素栈上累加出来的样式 |
-| 图片 | 新模块 `skyward-ui/src/image.rs`。PNG/JPEG/WebP，按字节头判断格式（不信 `Content-Type`）。单张上限 2MB、1600 万像素。随页面一次取最多 4 张 |
-| 绘制 | 按行直写 canvas 字节，不透明像素直接拷、透明才混合 |
-| 视频 | 识别 `<video>`/`<audio>`/`<source>`，显示成卡片并声明本浏览器不能播放 |
-| 链接 | 相邻链接之间补空格（B站是 `</a><a>` 连着写）；连续 3 个以上「单链接短块」合并成一行 |
-| 需要 JS 的页面 | `script ≥ 5 且正文块 ≤ 2` 时显示明确提示，而不是白屏 |
+| CSS | 鏂版ā鍧?`skyward-ui/src/style.rs`銆傚彧璇诲奖鍝?鏂囧瓧鎬庝箞绔?鐨勫０鏄庯細`display`锛堝惈 `none`锛夈€乣font-size`锛坧x/em/rem/%锛夈€乣color`/`background`銆乣text-align`銆乣font-weight`銆佷笂涓嬮棿璺濄€備笉鍋氱骇鑱旓紙鏈€鍚庝竴鏉¤鍒欒儨锛夈€佷笉璇?`@media`銆佹病鏈夊竷灞€绠楁硶 |
+| 鏍峰紡缁ф壙 | 姣忎釜鍧楀甫瀹冩墍鍦ㄥ厓绱犳爤涓婄疮鍔犲嚭鏉ョ殑鏍峰紡 |
+| 鍥剧墖 | 鏂版ā鍧?`skyward-ui/src/image.rs`銆侾NG/JPEG/WebP锛屾寜瀛楄妭澶村垽鏂牸寮忥紙涓嶄俊 `Content-Type`锛夈€傚崟寮犱笂闄?2MB銆?600 涓囧儚绱犮€傞殢椤甸潰涓€娆″彇鏈€澶?4 寮?|
+| 缁樺埗 | 鎸夎鐩村啓 canvas 瀛楄妭锛屼笉閫忔槑鍍忕礌鐩存帴鎷枫€侀€忔槑鎵嶆贩鍚?|
+| 瑙嗛 | 璇嗗埆 `<video>`/`<audio>`/`<source>`锛屾樉绀烘垚鍗＄墖骞跺０鏄庢湰娴忚鍣ㄤ笉鑳芥挱鏀?|
+| 閾炬帴 | 鐩搁偦閾炬帴涔嬮棿琛ョ┖鏍硷紙B绔欐槸 `</a><a>` 杩炵潃鍐欙級锛涜繛缁?3 涓互涓娿€屽崟閾炬帴鐭潡銆嶅悎骞舵垚涓€琛?|
+| 闇€瑕?JS 鐨勯〉闈?| `script 鈮?5 涓旀鏂囧潡 鈮?2` 鏃舵樉绀烘槑纭彁绀猴紝鑰屼笉鏄櫧灞?|
 
-**性能**（这是"浏览器巨卡"的来源，已修）：
+**鎬ц兘**锛堣繖鏄?娴忚鍣ㄥ法鍗?鐨勬潵婧愶紝宸蹭慨锛夛細
 
-- 图片原本逐像素走 `blend`（一张照片 54 万次函数调用 + 边界检查）→ 改按行直写
-- 长页画布 3 屏（55MB）→ 2 屏（37MB）
-- 一页取图 8 张 → 4 张，单图最高 420dp → 320dp
+- 鍥剧墖鍘熸湰閫愬儚绱犺蛋 `blend`锛堜竴寮犵収鐗?54 涓囨鍑芥暟璋冪敤 + 杈圭晫妫€鏌ワ級鈫?鏀规寜琛岀洿鍐?- 闀块〉鐢诲竷 3 灞忥紙55MB锛夆啋 2 灞忥紙37MB锛?- 涓€椤靛彇鍥?8 寮?鈫?4 寮狅紝鍗曞浘鏈€楂?420dp 鈫?320dp
 
-**结论（重要，写给后面的人）**：要让云·原神这类站点能跑，需要 **JS 引擎 + DOM + CSSOM +
-WebRTC/HLS + 音频 + 输入转发**，那是整个浏览器的量级。实测 `ys.mihoyo.com/cloud/` 只有
-5833 字节、15 个 `<script>`，去掉标签后可见文字只有「云·原神」四个字——纯 JS 应用。
-**已确认不可行**，浏览器因此暂时下线（见下）。
-
+**缁撹锛堥噸瑕侊紝鍐欑粰鍚庨潰鐨勪汉锛?*锛氳璁╀簯路鍘熺杩欑被绔欑偣鑳借窇锛岄渶瑕?**JS 寮曟搸 + DOM + CSSOM +
+WebRTC/HLS + 闊抽 + 杈撳叆杞彂**锛岄偅鏄暣涓祻瑙堝櫒鐨勯噺绾с€傚疄娴?`ys.mihoyo.com/cloud/` 鍙湁
+5833 瀛楄妭銆?5 涓?`<script>`锛屽幓鎺夋爣绛惧悗鍙鏂囧瓧鍙湁銆屼簯路鍘熺銆嶅洓涓瓧鈥斺€旂函 JS 搴旂敤銆?**宸茬‘璁や笉鍙**锛屾祻瑙堝櫒鍥犳鏆傛椂涓嬬嚎锛堣涓嬶級銆?
 ---
 
-## 2026-11-22 —— 侧滑返回、电池、上游对齐
-
-**侧滑返回没有提示箭头**：根因是本地提交 `f8a4d7c`（做「页面跟手预览」时）在绘制处加了
-`if self.preview.is_none()`，把整个返回提示挡掉了；**上游从来没有这行**。已逐行恢复上游写法
-（波浪 + `<`，无论有没有预览都画）。
-
-**充电时不显示闪电**：`Battery::charging()` 只看电量计报的 `status`，没看充电器是否在线
-（`plugged` 字段一直读了但没用）。在 recovery 里手机常插着电而电量计仍报 `Discharging`，
-因为平时启动充电的是 Android 框架。已改为 `self.plugged || matches!(charge, Charging | Full)`。
-
-**顺手修的健壮性**：电量计报出不认识的词（如 `Charging fast`）时，原来会让整个电池读数
-失败（电量也丢了），现在记为 `Unknown` 但保留电量。
-
+## 2026-11-22 鈥斺€?渚ф粦杩斿洖銆佺數姹犮€佷笂娓稿榻?
+**渚ф粦杩斿洖娌℃湁鎻愮ず绠ご**锛氭牴鍥犳槸鏈湴鎻愪氦 `f8a4d7c`锛堝仛銆岄〉闈㈣窡鎵嬮瑙堛€嶆椂锛夊湪缁樺埗澶勫姞浜?`if self.preview.is_none()`锛屾妸鏁翠釜杩斿洖鎻愮ず鎸℃帀浜嗭紱**涓婃父浠庢潵娌℃湁杩欒**銆傚凡閫愯鎭㈠涓婃父鍐欐硶
+锛堟尝娴?+ `<`锛屾棤璁烘湁娌℃湁棰勮閮界敾锛夈€?
+**鍏呯數鏃朵笉鏄剧ず闂數**锛歚Battery::charging()` 鍙湅鐢甸噺璁℃姤鐨?`status`锛屾病鐪嬪厖鐢靛櫒鏄惁鍦ㄧ嚎
+锛坄plugged` 瀛楁涓€鐩磋浜嗕絾娌＄敤锛夈€傚湪 recovery 閲屾墜鏈哄父鎻掔潃鐢佃€岀數閲忚浠嶆姤 `Discharging`锛?鍥犱负骞虫椂鍚姩鍏呯數鐨勬槸 Android 妗嗘灦銆傚凡鏀逛负 `self.plugged || matches!(charge, Charging | Full)`銆?
+**椤烘墜淇殑鍋ュ．鎬?*锛氱數閲忚鎶ュ嚭涓嶈璇嗙殑璇嶏紙濡?`Charging fast`锛夋椂锛屽師鏉ヤ細璁╂暣涓數姹犺鏁?澶辫触锛堢數閲忎篃涓簡锛夛紝鐜板湪璁颁负 `Unknown` 浣嗕繚鐣欑數閲忋€?
 ---
 
-## 2026-11-21 —— 视频解码器：可以加载出来
+## 2026-11-21 鈥斺€?瑙嗛瑙ｇ爜鍣細鍙互鍔犺浇鍑烘潵
 
-在真机上验证：
-
+鍦ㄧ湡鏈轰笂楠岃瘉锛?
 ```bash
-insmod /vendor/lib/modules/msm_video.ko     # 成功
+insmod /vendor/lib/modules/msm_video.ko     # 鎴愬姛
 ```
 
-结果：`/dev/video32`（解码器）、`/dev/video33`（编码器）出现，
-固件 `vpu35_4v.mbn` 从 `/odm/firmware/` 加载成功（10ms）。
-
+缁撴灉锛歚/dev/video32`锛堣В鐮佸櫒锛夈€乣/dev/video33`锛堢紪鐮佸櫒锛夊嚭鐜帮紝
+鍥轰欢 `vpu35_4v.mbn` 浠?`/odm/firmware/` 鍔犺浇鎴愬姛锛?0ms锛夈€?
 ```
 msm_vidc_v4l2 aa00000.qcom,vidc: bound ... (ops msm_vidc_component_ops [msm_video])
 ```
 
-**结论**：这台手机的视频硬件解码器在 recovery 里能用，只是模块默认没加载。
-直链视频播放（不含 DRM、不含 JS 取流）技术上可行，尚未实现。
+**缁撹**锛氳繖鍙版墜鏈虹殑瑙嗛纭欢瑙ｇ爜鍣ㄥ湪 recovery 閲岃兘鐢紝鍙槸妯″潡榛樿娌″姞杞姐€?鐩撮摼瑙嗛鎾斁锛堜笉鍚?DRM銆佷笉鍚?JS 鍙栨祦锛夋妧鏈笂鍙锛屽皻鏈疄鐜般€?
+---
+
+## 鏇存棭锛氭牳蹇冮€傞厤锛堝凡瀹屾垚骞堕獙璇侊級
+
+- **`/data` 瑙ｅ瘑**锛歮etadata 鍔犲瘑 + `wrappedkey_v0`锛宬eymint/gatekeeper/weaver/eSE 鍏ㄩ摼璺紱
+  瀹炴祴 `/data/data` 607 涓洰褰曘€乣/sdcard` 鍙
+- **`-62 KEY_REQUIRES_UPGRADE`**锛氬繀椤昏皟 `upgradeKey`锛堢敤缁湡鍚庣殑 blob锛夛紝鍙噸鍚湇鍔℃棤鏁?- **鍘嬬缉蹇収锛圴ABC锛?*锛氭妸鎵嬫満鑷繁鐨?`snapuserd` 鎵撹繘 ramdisk锛涘唴鏍?target 鍚嶆槸 `user`
+  涓嶆槸 `dm-user`锛涜〃鍙傛暟蹇呴』 3 娈?`0 0 <鍚嶅瓧>`锛沗init` 瑕?5 娈?- **灞忓箷/瑙︽懜**锛?440脳3200@120銆佸弻鍑诲敜閱?- **OTA 璀﹀憡**锛氬湪 recovery 閲岃瀹樻柟瀹屾暣鍖呭ぇ姒傜巼鍗＄背锛堣嚜 OS4 璧?bootloader 鏈夎嚜宸辩殑绛惧悕鏍￠獙锛?  `disable-verification` 缁曚笉杩囷級銆傚畨瑁呴〉涓庣郴缁熸洿鏂伴〉閮芥湁绾㈠瓧
 
 ---
 
-## 更早：核心适配（已完成并验证）
+## 寰呭姙
 
-- **`/data` 解密**：metadata 加密 + `wrappedkey_v0`，keymint/gatekeeper/weaver/eSE 全链路；
-  实测 `/data/data` 607 个目录、`/sdcard` 可读
-- **`-62 KEY_REQUIRES_UPGRADE`**：必须调 `upgradeKey`（用续期后的 blob），只重启服务无效
-- **压缩快照（VABC）**：把手机自己的 `snapuserd` 打进 ramdisk；内核 target 名是 `user`
-  不是 `dm-user`；表参数必须 3 段 `0 0 <名字>`；`init` 要 5 段
-- **屏幕/触摸**：1440×3200@120、双击唤醒
-- **OTA 警告**：在 recovery 里装官方完整包大概率卡米（自 OS4 起 bootloader 有自己的签名校验，
-  `disable-verification` 绕不过）。安装页与系统更新页都有红字
-
----
-
-## 待办
-
-- [ ] **安装/更新日志**：像 TWRP 一样实时滚动、能滑到底部查看（用户标为最高优先）
-- [ ] **脚本里的音量键**：部分官改包的 `update-binary` 用
-      `getevent -qlc 1 | grep VOLUME` 读音量键。Skyward 没有 `EVIOCGRAB`，理论上不冲突，
-      但要确认 ramdisk 里有 `getevent`，且脚本运行期间 UI 不吞掉按键
-- [ ] 全部参数与信息页底部有黑块
-- [ ] 浏览器：暂时下线，后续再适配
-- [ ] 直链视频播放（V4L2 硬件解码）
-- [ ] 云·原神这类 SPA：不可行，除非实现完整 JS+DOM
+- [ ] **瀹夎/鏇存柊鏃ュ織**锛氬儚 TWRP 涓€鏍峰疄鏃舵粴鍔ㄣ€佽兘婊戝埌搴曢儴鏌ョ湅锛堢敤鎴锋爣涓烘渶楂樹紭鍏堬級
+- [ ] **鑴氭湰閲岀殑闊抽噺閿?*锛氶儴鍒嗗畼鏀瑰寘鐨?`update-binary` 鐢?      `getevent -qlc 1 | grep VOLUME` 璇婚煶閲忛敭銆係kyward 娌℃湁 `EVIOCGRAB`锛岀悊璁轰笂涓嶅啿绐侊紝
+      浣嗚纭 ramdisk 閲屾湁 `getevent`锛屼笖鑴氭湰杩愯鏈熼棿 UI 涓嶅悶鎺夋寜閿?- [ ] 鍏ㄩ儴鍙傛暟涓庝俊鎭〉搴曢儴鏈夐粦鍧?- [ ] 娴忚鍣細鏆傛椂涓嬬嚎锛屽悗缁啀閫傞厤
+- [ ] 鐩撮摼瑙嗛鎾斁锛圴4L2 纭欢瑙ｇ爜锛?- [ ] 浜懧峰師绁炶繖绫?SPA锛氫笉鍙锛岄櫎闈炲疄鐜板畬鏁?JS+DOM
