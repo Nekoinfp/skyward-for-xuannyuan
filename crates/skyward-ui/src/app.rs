@@ -11151,7 +11151,6 @@ mod tests {
 
     #[test]
     fn a_volume_key_wakes_a_dark_install_screen_without_changing_pages() {
-        let (f, i) = (fonts(), info());
         let mut app = App::new(Screen::Installing, W, H, PPD);
         app.state.install = Install::Scripting { stage: None, running: true };
         app.display_on = false;

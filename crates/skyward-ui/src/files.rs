@@ -560,6 +560,7 @@ impl Head {
 /// `folder` under `top`, and under it the box holding `query` typed so far
 /// (or `hint` while there is none) with the order it is in, `order`, on its
 /// right.
+#[allow(clippy::too_many_arguments)]
 pub fn head(t: &Theme, f: &Fonts, query: &str, hint: &str, order: &str, descending: bool, top: &str, folder: &str) -> Head {
     let m = &t.m;
     let path = strip(t, f, top, folder);

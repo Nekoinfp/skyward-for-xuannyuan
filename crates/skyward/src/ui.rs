@@ -2940,7 +2940,7 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     // entries inherit what the folder they go into has.
                     Effect::MakeFolder { into, name } => {
                         let outcome = (|| -> Result<(), String> {
-                            let own = ownership(Path::new(&into))?;
+                            let own = ownership(Path::new(&into)).map_err(|e| format!("{e:#}"))?;
                             skyward_files::make_folders(&Path::new(&into).join(&name), own).map_err(|e| format!("{e:#}"))
                         })()
                         .map_err(|e| e);
