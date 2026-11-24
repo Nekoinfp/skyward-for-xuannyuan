@@ -14,7 +14,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| 镜像 | `skyward-v0.3.1-beta1-xuanyuan-OS4.0.4.0.XOACNXM.img` |
+| 镜像 | `skyward-v0.3.1-beta2-xuanyuan-OS4.0.4.0.XOACNXM.img` |
 | 大小 | 104,857,600 字节（与底包 recovery 分区同尺寸） |
 | SHA-256 | `84bf36e7d2431034035948faf5d0243f9ce150d596a2d3dbd7f670f8ae22000c` |
 | 形状 | `ANDROID!`、header_version 4、kernel 0、ramdisk 51,988,960 字节 |
@@ -86,7 +86,7 @@ sudo mount -o loop,ro stock/vendor.img /mnt/vendor
 sudo mount -o loop,ro stock/odm.img /mnt/odm
 
 tools/verify.sh --config devices/xuanyuan.toml \
-    --image out/skyward-v0.3.1-beta1-xuanyuan-OS4.0.4.0.XOACNXM.img \
+    --image out/skyward-v0.3.1-beta2-xuanyuan-OS4.0.4.0.XOACNXM.img \
     --firmware /mnt
 ```
 
@@ -157,8 +157,8 @@ Magisk 模块（`tricky_store` 等）把状态伪装了。`fastboot getvar unloc
 **刷入与结果（2026-11-19）**
 
 ```
-fastboot flash recovery_a skyward-v0.3.1-beta1-xuanyuan-OS4.0.4.0.XOACNXM.img   OKAY
-fastboot flash recovery_b skyward-v0.3.1-beta1-xuanyuan-OS4.0.4.0.XOACNXM.img   OKAY
+fastboot flash recovery_a skyward-v0.3.1-beta2-xuanyuan-OS4.0.4.0.XOACNXM.img   OKAY
+fastboot flash recovery_b skyward-v0.3.1-beta2-xuanyuan-OS4.0.4.0.XOACNXM.img   OKAY
 fastboot reboot recovery
 ```
 
@@ -390,8 +390,8 @@ fastboot fetch recovery_b stock-recovery_b.img
 **刷入**（两个槽位都刷，避免回落到旧的那一份）：
 
 ```
-fastboot flash recovery_a skyward-v0.3.1-beta1-xuanyuan-OS4.0.4.0.XOACNXM.img
-fastboot flash recovery_b skyward-v0.3.1-beta1-xuanyuan-OS4.0.4.0.XOACNXM.img
+fastboot flash recovery_a skyward-v0.3.1-beta2-xuanyuan-OS4.0.4.0.XOACNXM.img
+fastboot flash recovery_b skyward-v0.3.1-beta2-xuanyuan-OS4.0.4.0.XOACNXM.img
 fastboot reboot recovery
 ```
 

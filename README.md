@@ -5,7 +5,7 @@ Skyward 是一个用 Rust 写的第三方 recovery。
 本项目是 **小米 15 Ultra（xuanyuan）、澎湃 OS 4.0.4.0（OS4.0.4.0.XOACNXM）** 的适配版本。
 
 - 上游：[kirklin/skyward](https://github.com/kirklin/skyward) 0.3.1
-- 本版本：**0.3.1-beta1**
+- 本版本：**0.3.1-beta2**
 - 目标机型：Xiaomi 15 Ultra（`25019PNF3C` / `25010PN30C`）
 - 测试系统：OS4.0.4.0.XOACNXM（Android 17 / SDK 37 + vendor SDK 35）
 
@@ -51,8 +51,8 @@ Skyward 是一个用 Rust 写的第三方 recovery。
 手机进入 fastboot 刷入镜像即可。
 
 ```bash
-fastboot flash recovery_a skyward-v0.3.1-beta1-xuanyuan-OS4.0.4.0.XOACNXM.img
-fastboot flash recovery_b skyward-v0.3.1-beta1-xuanyuan-OS4.0.4.0.XOACNXM.img
+fastboot flash recovery_a skyward-v0.3.1-beta2-xuanyuan-OS4.0.4.0.XOACNXM.img
+fastboot flash recovery_b skyward-v0.3.1-beta2-xuanyuan-OS4.0.4.0.XOACNXM.img
 fastboot reboot recovery
 ```
 
@@ -61,7 +61,7 @@ fastboot reboot recovery
 校验（可选）：
 
 ```bash
-sha256sum skyward-v0.3.1-beta1-xuanyuan-OS4.0.4.0.XOACNXM.img
+sha256sum skyward-v0.3.1-beta2-xuanyuan-OS4.0.4.0.XOACNXM.img
 # 84bf36e7d2431034035948faf5d0243f9ce150d596a2d3dbd7f670f8ae22000c
 ```
 

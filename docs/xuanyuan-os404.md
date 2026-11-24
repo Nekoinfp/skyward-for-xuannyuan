@@ -354,7 +354,7 @@ Windows 主机上跑不了整个 workspace：`skyward-bootimg` 的 ramdisk 解�
 ### 构建出来的那份镜像
 
 ```
-skyward-v0.3.1-beta1-xuanyuan-OS4.0.4.0.XOACNXM.img
+skyward-v0.3.1-beta2-xuanyuan-OS4.0.4.0.XOACNXM.img
 104,857,600 字节
 SHA-256 84bf36e7d2431034035948faf5d0243f9ce150d596a2d3dbd7f670f8ae22000c
 ```

@@ -11,7 +11,7 @@ param(
 
 $adb = 'C:\platform-tools\adb.exe'
 $fastboot = 'C:\platform-tools\fastboot.exe'
-$img = 'D:\文件\work\build\skyward-v0.3.1-beta1-xuanyuan-OS4.0.4.0.XOACNXM.img'
+$img = 'D:\文件\work\build\skyward-v0.3.1-beta2-xuanyuan-OS4.0.4.0.XOACNXM.img'
 $expect = '7fe901e8e2cb762c2ed3ad19c5cab961ebcadb0ad3fc9ed7d3fb9b0d135a2a71'
 
 function Step($m) { Write-Output ""; Write-Output "=== $m ===" }
