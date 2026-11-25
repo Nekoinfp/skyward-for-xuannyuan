@@ -73,6 +73,8 @@ pub fn render(screen: Screen, cx: &Ctx) -> Frame {
         Screen::Reboot => reboot(cx),
         Screen::Wipe => wipe(cx),
         Screen::Mount => mount(cx),
+        Screen::Modules => modules(cx),
+        Screen::ModuleDetail => module_detail(cx),
         Screen::Browser => browser(cx),
         Screen::Install => install(cx),
         Screen::Choose(place) => choose(cx, place),
@@ -588,6 +590,105 @@ pub fn screen_off(cx: &Ctx) -> Frame {
         widgets::footnote(&mut c, t, f, y, note);
     }
     Frame::new(t, c, hits(&times.rows, &picks), l.pick(SCREEN_TIMEOUT), top)
+}
+
+/// The Magisk modules under the data partition: one card of rows, a switch
+/// on each, in the order the module manager the owner knows lists them. The
+/// modules live in `/data/adb/modules`, which the data partition holds when
+/// it is open; the page says so when it is not.
+pub fn modules(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let top = t.m.content_top;
+    let mut out = Vec::new();
+    let bottom = match &s.modules {
+        Err(why) => {
+            let list = widgets::list(&mut c, t, f, top, &[Row::new(l.pick(["无法读取模块", "無法讀取模組", "Couldn't read the modules"])).trail(Trail::None)]);
+            widgets::footnote(&mut c, t, f, list.bottom, why)
+        }
+        Ok(modules) if modules.is_empty() => {
+            let list = widgets::list(&mut c, t, f, top, &[Row::new(l.pick(["暂无模块", "沒有模組", "No modules"])).trail(Trail::None)]);
+            list.bottom
+        }
+        Ok(modules) => {
+            // Each row says how the module stands, as the module manager
+            // beside it does: one with an update waiting says so, one turned
+            // off says so, the rest say their version and who wrote them.
+            let subs: Vec<String> = modules
+                .iter()
+                .map(|m| {
+                    if m.staged {
+                        l.pick(["下次启动生效", "下次啟動生效", "Next start"]).to_string()
+                    } else if !m.enabled {
+                        l.pick(["关", "關", "Off"]).to_string()
+                    } else {
+                        let (version, author) = (&m.version, &m.author);
+                        tr!(l, "{version} · {author}", "{version} · {author}", "{version} · {author}")
+                    }
+                })
+                .collect();
+            let rows: Vec<Row> = modules
+                .iter()
+                .zip(&subs)
+                .map(|(m, sub)| Row::new(&m.name).subtitle(sub).switch(m.enabled))
+                .collect();
+            let list = widgets::list(&mut c, t, f, top, &rows);
+            // Tapping the switch changes the module; tapping the rest of the
+            // row opens what it says of itself. The switch is the right end
+            // of each row.
+            out = list
+                .rows
+                .iter()
+                .zip(modules)
+                .enumerate()
+                .flat_map(|(i, (&rect, _))| {
+                    let sw = Rect { x: rect.x + rect.w - t.m.inner - t.m.switch_w, w: t.m.inner + t.m.switch_w, ..rect };
+                    let body = Rect { w: sw.x - rect.x, ..rect };
+                    vec![Hit { rect: sw, action: Action::ModuleToggle(i) }, Hit { rect: body, action: Action::ModuleDetail(i) }]
+                })
+                .collect();
+            match &s.module_failure {
+                Some(why) => widgets::footnote(&mut c, t, f, list.bottom, why),
+                None => list.bottom,
+            }
+        }
+    };
+    let y = widgets::footnote(
+        &mut c,
+        t,
+        f,
+        bottom + t.m.dp(12.0),
+        l.pick(["点一个模块查看详情，或在这里关闭它。", "點一個模組查看詳情，或在這裡關閉它。", "Tap a module to see what it is, or turn it off here."]),
+    );
+    Frame::new(t, fit(c, t, y), out, l.pick(["模块管理", "模組管理", "Modules"]), top)
+}
+
+/// The module the module page shows: what it says of itself, and its switch.
+pub fn module_detail(cx: &Ctx) -> Frame {
+    let (t, f, s, l) = (cx.t, cx.f, cx.state, cx.state.lang);
+    let mut c = long_page(cx);
+    let top = t.m.content_top;
+    let mut out = Vec::new();
+    let Some(m) = s.modules.as_ref().ok().and_then(|m| m.get(s.selected_module)) else {
+        return Frame::new(t, fit(c, t, top), out, l.pick(["模块详情", "模組詳情", "Module"]), top);
+    };
+    let (version, author) = (&m.version, &m.author);
+    let sub = tr!(l, "{version} · {author}", "{version} · {author}", "{version} · {author}");
+    let list = widgets::list(&mut c, t, f, top, &[Row::new(&m.name).subtitle(&sub)]);
+    let mut y = list.bottom;
+    if !m.description.is_empty() {
+        y = widgets::paragraph(&mut c, t, f, y + t.m.dp(12.0), &m.description);
+    }
+    if !m.staged {
+        let toggle = widgets::list(&mut c, t, f, y + t.m.card_gap, &[Row::new(l.pick(["启用模块", "啟用模組", "Enabled"])).switch(m.enabled)]);
+        out.push(Hit { rect: toggle.rows[0], action: Action::ModuleToggle(s.selected_module) });
+        y = match &s.module_failure {
+            Some(why) => widgets::footnote(&mut c, t, f, toggle.bottom, why),
+            None => toggle.bottom,
+        };
+    }
+    let y = widgets::footnote(&mut c, t, f, y + t.m.dp(12.0), l.pick(["重启手机后生效。", "重新啟動手機後生效。", "It takes effect at the next start."]));
+    Frame::new(t, fit(c, t, y), out, l.pick(["模块详情", "模組詳情", "Module"]), top)
 }
 
 /// Mount manager: the slot's partitions, each with a switch to mount it
@@ -2521,6 +2622,7 @@ pub fn advanced(cx: &Ctx) -> Frame {
         Row::new(l.pick(FILESYSTEMS)).icon(RED, Icon::Mount),
         Row::new(l.pick(LOGS)).icon(ORANGE, Icon::Log),
         Row::new(l.pick(UPDATE)).icon(GREEN, Icon::Layers).trail(Trail::Value(update_value(cx))),
+        Row::new(l.pick(["模块管理", "模組管理", "Modules"])).icon(BLUE, Icon::Layers),
         Row::new(l.pick(AVB)).icon(RED, Icon::Shield),
     ]);
     let out = hits(&tools.rows, &[
@@ -2530,6 +2632,7 @@ pub fn advanced(cx: &Ctx) -> Frame {
         Action::Open(Screen::Filesystems),
         Action::Open(Screen::Logs),
         Action::Open(Screen::Update),
+        Action::Open(Screen::Modules),
         Action::Open(Screen::Avb),
     ]);
     Frame::new(t, c, out, l.pick(ADVANCED), top)

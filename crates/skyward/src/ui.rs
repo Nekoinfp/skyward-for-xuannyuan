@@ -40,7 +40,7 @@ use skyward_sys::sleep::{Sleeper, Slept};
 use skyward_sys::uevent;
 use skyward_systems::Who;
 use skyward_ui::aod::{Shown, Want};
-use skyward_ui::app::{
+use skyward_ui::app::{ModuleRow, 
     App, Asked, BackupAt, BackupEnd, BackupEntry, BackupRefusal, ClashChoice, Data, DownloadEnd, Effect, EraseStop, FileKind, FileOp,
     FileRow, FileTask, FsAction, FsRow, Have, Held, ItemEnd, ItemState, JobEnd, Keys, MountFailure, Part, PartKind, PartStop, Place,
     RenameRefused, Screen, Shot, SkywardEnd, SkywardStage, Target, UsbDrive, UsbLink, Wipe, DATA_OPENING, DATA_PARTITION, DOWNLOADS,
@@ -378,6 +378,68 @@ fn list(app: &mut App, folder: String, closed: &[Closed]) -> Result<()> {
     }
     app.set_files(folder, files, unix_now()?);
     Ok(())
+}
+
+/// The Magisk modules under `/data/adb/modules`, each read from the
+/// `module.prop` it keeps. The data partition holds them: an error here is
+/// the page's to say, and is not a fault of a module.
+fn list_modules() -> Result<Vec<ModuleRow>, String> {
+    let dir = Path::new("/data/adb/modules");
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) => return Err(format!("read {}: {e:#}", dir.display())),
+    };
+    let mut rows = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        // A folder the module's own `module.prop` does not speak through is
+        // no module the owner knows: it is passed over rather than listed
+        // with no name to give it.
+        let Ok(prop) = fs::read_to_string(path.join("module.prop")) else { continue };
+        let mut row = ModuleRow {
+            id: entry.file_name().to_string_lossy().into_owned(),
+            name: String::new(),
+            version: String::new(),
+            author: String::new(),
+            description: String::new(),
+            enabled: !path.join("disable").exists(),
+            staged: Path::new("/data/adb/modules_update").join(entry.file_name()).exists(),
+        };
+        for line in prop.lines() {
+            let Some((key, value)) = line.split_once('=') else { continue };
+            match key.trim() {
+                "name" => row.name = value.trim().to_string(),
+                "version" => row.version = value.trim().to_string(),
+                "author" => row.author = value.trim().to_string(),
+                "description" => row.description = value.trim().to_string(),
+                _ => {}
+            }
+        }
+        if row.name.is_empty() {
+            row.name = row.id.clone();
+        }
+        rows.push(row);
+    }
+    rows.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(rows)
+}
+
+/// Turn the module `id` on or off: its `disable` file is what stands for a
+/// module being off, and taking it away is what turns one back on.
+fn toggle_module(id: &str, enable: bool) -> anyhow::Result<()> {
+    use anyhow::Context;
+    let path = Path::new("/data/adb/modules").join(id).join("disable");
+    if enable {
+        match fs::remove_file(&path) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e).with_context(|| format!("turn {} on", id)),
+        }
+    }
+    fs::write(&path, b"").with_context(|| format!("turn {id} off"))
 }
 
 /// The number of the user a folder of the data partition belongs to, where
@@ -2938,6 +3000,12 @@ pub fn run(cfg: &DeviceConfig, font: &Path, mono: &Path, request: bcb::Request, 
                     // A folder made where the file manager asked for it. The
                     // owner's shared storage is the usual place, so its
                     // entries inherit what the folder they go into has.
+                    Effect::ListModules => app.set_modules(list_modules()),
+                    Effect::ToggleModule { id, enable } => {
+                        let outcome = toggle_module(&id, enable).map_err(|e| format!("{e:#}"));
+                        app.module_toggled(outcome, now);
+                        app.set_modules(list_modules());
+                    }
                     Effect::MakeFolder { into, name } => {
                         let outcome = (|| -> Result<(), String> {
                             let own = ownership(Path::new(&into)).map_err(|e| format!("{e:#}"))?;

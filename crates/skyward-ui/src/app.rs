@@ -106,6 +106,10 @@ pub enum Screen {
     /// Skyward's newest release, and updating to it: its build for the
     /// phone downloaded and written into the recovery partitions.
     SkywardUpdate,
+    /// The Magisk modules under the data partition, each with its switch.
+    Modules,
+    /// One of them: what it says of itself, and its switch.
+    ModuleDetail,
     /// Skyward's own licence.
     License,
     /// The interface typeface and the terms it is used under.
@@ -917,6 +921,25 @@ pub struct MountRow {
     pub holders: Vec<String>,
 }
 
+/// A Magisk module under `/data/adb/modules`, as the module page reads it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModuleRow {
+    /// The directory it keeps its files in, which is the name it is known by
+    /// on the phone.
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub author: String,
+    /// What the module says of itself in its `module.prop`.
+    pub description: String,
+    /// Whether the module stands as on: its `disable` file is what says
+    /// otherwise.
+    pub enabled: bool,
+    /// Whether an update for it waits in `modules_update`, which goes in
+    /// with the next start.
+    pub staged: bool,
+}
+
 /// A mount or unmount the runtime could not carry out. The mount page says
 /// so until the next try, or until it is left.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1528,6 +1551,12 @@ pub enum Action {
     LeaveNetwork,
     /// Look for the networks in range again.
     Rescan,
+    /// Turn the module at this place in the list on or off.
+    ModuleToggle(usize),
+    /// Open the page of the module at this place in the list.
+    ModuleDetail(usize),
+    /// Read the modules under the data partition again.
+    RefreshModules,
     /// Open the page that adds a network by hand.
     AddNetwork,
     /// Type into this field of the page that adds a network.
@@ -1967,6 +1996,12 @@ pub struct State {
     /// The mount page's partitions, as the runtime last read them, or why
     /// it could not.
     pub mounts: Result<Vec<MountRow>, String>,
+    /// The Magisk modules under `/data/adb/modules`, and why there are none.
+    pub modules: Result<Vec<ModuleRow>, String>,
+    /// The module the detail page shows, by its place in [`modules`].
+    pub selected_module: usize,
+    /// A module switch that could not be changed: what it said.
+    pub module_failure: Option<String>,
     pub mount_failure: Option<MountFailure>,
     /// Which of [`BACKUP_PARTS`] a backup takes.
     pub backup: [bool; 4],
@@ -2225,6 +2260,9 @@ impl Default for State {
             remembered: None,
             reflash: None,
             mounts: Ok(Vec::new()),
+            modules: Ok(Vec::new()),
+            selected_module: 0,
+            module_failure: None,
             mount_failure: None,
             backup: [true, true, false, true],
             backup_to: Place::Storage,
@@ -2522,6 +2560,12 @@ pub enum Effect {
     /// Make the folder `name` in `into`, telling the page how it went with
     /// [`App::folder_made`].
     MakeFolder { into: String, name: String },
+    /// Read the Magisk modules under `/data/adb/modules`, telling what they
+    /// are with [`App::set_modules`].
+    ListModules,
+    /// Turn the module `id` on or off, telling how it went with
+    /// [`App::module_toggled`].
+    ToggleModule { id: String, enable: bool },
     /// Read `url` off the web, telling the page what came back with
     /// [`App::browse_read`].
     Browse(String),
@@ -4459,6 +4503,24 @@ impl App {
 
     /// How renaming the entry the file page shows went: done, the folder
     /// comes back with the entry under its new name; refused, why.
+    /// The modules under /data/adb/modules, and why there are none.
+    pub fn set_modules(&mut self, modules: Result<Vec<ModuleRow>, String>) {
+        self.state.modules = modules;
+        self.refresh();
+    }
+
+    /// A module's switch was changed, or why it was not.
+    pub fn module_toggled(&mut self, outcome: Result<(), String>, now: u64) {
+        match outcome {
+            Ok(()) => {
+                self.state.module_failure = None;
+                self.say(self.state.lang.pick(["开关已改变", "開關已改變", "The switch changed"]), now);
+            }
+            Err(why) => self.state.module_failure = Some(why),
+        }
+        self.refresh();
+    }
+
     /// The folder the new-folder page named was made, or why it was not.
     pub fn folder_made(&mut self, outcome: Result<(), String>, now: u64) {
         match outcome {
@@ -6075,6 +6137,7 @@ impl App {
                 vec![Effect::ReadAvb]
             }
             Screen::Mount => vec![Effect::ReadMounts],
+            Screen::Modules => vec![Effect::ListModules],
             Screen::Vbmeta => {
                 // The copies kept are found again as the page opens, and the
                 // flags shown are the ones the phone has now.
@@ -6280,6 +6343,22 @@ impl App {
                 if switch == Switch::RememberWlan && !now_on {
                     return vec![Effect::ForgetWlan(String::new())];
                 }
+            }
+            Action::ModuleToggle(i) => {
+                let Some(m) = self.state.modules.as_ref().ok().and_then(|m| m.get(i)) else { return Vec::new() };
+                if m.staged {
+                    self.say(self.state.lang.pick(["已更新，下次启动生效", "已更新，下次啟動生效", "Already updated; it takes effect at the next start"]), now);
+                    return Vec::new();
+                }
+                return vec![Effect::ToggleModule { id: m.id.clone(), enable: !m.enabled }];
+            }
+            Action::ModuleDetail(i) => {
+                self.state.selected_module = i;
+                self.open(Screen::ModuleDetail);
+            }
+            Action::RefreshModules => {
+                self.state.module_failure = None;
+                return vec![Effect::ListModules];
             }
             Action::MountToggle(i) => {
                 if self.state.mount_failure.take().is_some() {
@@ -9597,6 +9676,74 @@ mod tests {
         let mut app = App::new(Screen::Home, W, H, PPD);
         assert_eq!(tap(&mut app, &f, &i, Action::Open(Screen::Update)), vec![Effect::ReadUpdate]);
         assert_eq!(app.screen(), Screen::Update);
+    }
+
+    fn module_row(id: &str, name: &str, version: &str, author: &str, enabled: bool, staged: bool) -> ModuleRow {
+        ModuleRow {
+            id: id.into(),
+            name: name.into(),
+            version: version.into(),
+            author: author.into(),
+            description: String::new(),
+            enabled,
+            staged,
+        }
+    }
+
+    #[test]
+    fn the_module_page_lists_each_module_with_its_switch() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Modules, W, H, PPD);
+        app.set_modules(Ok(vec![
+            module_row("zygisk", "Zygisk Next", "1.5.3", "Dr-TSNG", true, false),
+            module_row("shamiko", "Shamiko", "1.2.1", "LSPosed", false, false),
+            module_row("busybox", "BusyBox for Android", "1.36", "osm0sis", true, true),
+        ]));
+        let frame = app.frame(&f, &i);
+        // Two hits per module: the switch turns it, the row opens it.
+        let toggles = frame.hits.iter().filter(|h| matches!(h.action, Action::ModuleToggle(_))).count();
+        let details = frame.hits.iter().filter(|h| matches!(h.action, Action::ModuleDetail(_))).count();
+        assert_eq!(toggles, 3, "every module has a switch");
+        assert_eq!(details, 3, "every module opens");
+    }
+
+    #[test]
+    fn a_module_switch_turns_it_the_other_way() {
+        let mut app = App::new(Screen::Modules, W, H, PPD);
+        app.set_modules(Ok(vec![
+            module_row("zygisk", "Zygisk Next", "1.5.3", "Dr-TSNG", true, false),
+            module_row("shamiko", "Shamiko", "1.2.1", "LSPosed", false, false),
+        ]));
+        // The one on turns off; the one off turns on.
+        assert_eq!(app.act(Action::ModuleToggle(0), 0), vec![Effect::ToggleModule { id: "zygisk".into(), enable: false }]);
+        assert_eq!(app.act(Action::ModuleToggle(1), 0), vec![Effect::ToggleModule { id: "shamiko".into(), enable: true }]);
+    }
+
+    #[test]
+    fn a_module_with_an_update_waiting_is_says_so_and_is_left_alone() {
+        let mut app = App::new(Screen::Modules, W, H, PPD);
+        app.set_modules(Ok(vec![module_row("busybox", "BusyBox for Android", "1.36", "osm0sis", true, true)]));
+        // The staged one is not toggled here: it goes in with the next start.
+        assert!(app.act(Action::ModuleToggle(0), 0).is_empty(), "a staged module is left alone");
+        assert_eq!(app.deadline(0), Some(TOAST_MS), "it says why");
+    }
+
+    #[test]
+    fn a_module_row_opens_what_it_says_of_itself() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Modules, W, H, PPD);
+        app.set_modules(Ok(vec![module_row("zygisk", "Zygisk Next", "1.5.3", "Dr-TSNG", true, false)]));
+        tap(&mut app, &f, &i, Action::ModuleDetail(0));
+        assert_eq!(app.screen(), Screen::ModuleDetail, "the row opens its page");
+    }
+
+    #[test]
+    fn the_module_page_says_why_there_are_none() {
+        let (f, i) = (fonts(), info());
+        let mut app = App::new(Screen::Modules, W, H, PPD);
+        app.set_modules(Err("read /data/adb/modules: Permission denied".into()));
+        let frame = app.frame(&f, &i);
+        assert!(frame.hits.is_empty(), "nothing to turn off");
     }
 
     #[test]
